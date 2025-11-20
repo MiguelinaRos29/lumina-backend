@@ -22,7 +22,7 @@ async function chatcontroller(req, res) {
   }
 }
 
-module.exports = { chatController };
+module.exports = { chatcontroller };
 
 
 
