@@ -1,6 +1,6 @@
 const { obtenerRespuestaLumina } = require("../services/luminaAI.js");
 
-async function chatController(req, res) {
+async function chatcontroller(req, res) {
   try {
     const { message, history, clientId } = req.body;
 
@@ -15,7 +15,7 @@ async function chatController(req, res) {
 
     return res.json({ reply });
   } catch (error) {
-    console.error("❌ Error en chatController:", error);
+    console.error("❌ Error en chatcontroller:", error);
     return res.status(500).json({
       reply: "⚠️ Ha ocurrido un error al llamar a la IA de Lumina.",
     });
