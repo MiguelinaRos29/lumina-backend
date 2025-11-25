@@ -1,123 +1,197 @@
 // controllers/chatcontroller.js
-const prisma = require('../prismaClient');
-const { obtenerRespuestaLumina } = require('../services/luminaAI');
 
-const chatcontroller = async (req, res) => {
+const { PrismaClient } = require("@prisma/client");
+const prisma = new PrismaClient();
+
+const { obtenerRespuestaLumina } = require("../services/luminaAI");
+const {
+  setEstadoCita,
+  getEstadoCita,
+  limpiarEstadoCita,
+} = require("../services/appointmentState");
+const { detectarIntencion } = require("../services/intentDetection");
+
+// ---------------------------------------------------------------------------
+// POST /api/chat  → controlador principal del chat
+// ---------------------------------------------------------------------------
+exports.chatcontroller = async (req, res) => {
   try {
-    const { message, mode, clientId = 'demo-client' } = req.body;
+    const { clientId, message, mode } = req.body;
 
-    if (!message) {
-      return res.status(400).json({ error: 'Falta el mensaje del usuario' });
+    if (!clientId || !message) {
+      return res
+        .status(400)
+        .json({ error: "clientId y message son obligatorios" });
     }
 
-    // 1. Buscar cliente por API KEY (clientId)
-    let client = await prisma.client.findUnique({
-      where: { api_key: clientId },
-    });
-
-    // 2. Si no existe, lo creamos
-    if (!client) {
-      client = await prisma.client.create({
+    // 1) Guardar mensaje del usuario (si la tabla existe)
+    try {
+      await prisma.message.create({
         data: {
-          name: `Cliente ${clientId}`,
-          api_key: clientId,
+          clientId,
+          role: "user",
+          content: message,
         },
+      });
+    } catch (err) {
+      console.warn("⚠ No se pudo guardar el mensaje del usuario en BD:", err.message);
+    }
+
+    // 2) Comprobar si hay un estado de cita pendiente
+    const estadoCita = getEstadoCita(clientId);
+
+    // Si estábamos esperando la fecha/detalles de la cita
+    if (estadoCita === "esperando_fecha") {
+      // Aquí simplemente usamos lo que el usuario diga como detalles de la cita
+      const respuestaCita =
+        "Perfecto, he registrado tu cita con estos detalles: " +
+        message +
+        ". Si quieres cambiarla o añadir más información, dímelo y lo actualizamos.";
+
+      // Limpiamos estado
+      limpiarEstadoCita(clientId);
+
+      // Guardar respuesta del asistente (si la tabla existe)
+      try {
+        await prisma.message.create({
+          data: {
+            clientId,
+            role: "assistant",
+            content: respuestaCita,
+          },
+        });
+      } catch (err) {
+        console.warn("⚠ No se pudo guardar la respuesta de cita en BD:", err.message);
+      }
+
+      return res.json({
+        reply: respuestaCita,
+        clientId,
       });
     }
 
-    // 3. Traer historial del cliente
-    const historial = await prisma.message.findMany({
-      where: { client_id: client.id },
-      orderBy: { created_at: 'asc' },
-      take: 20, // últimos 20 mensajes para contexto
-    });
+    // 3) Detectar intención del mensaje actual
+    const intencion = detectarIntencion(message);
 
-    const historyForModel = historial.map((msg) => ({
-      role: msg.role === 'assistant' ? 'assistant' : 'user',
-      content: msg.content,
-    }));
+    // 3.a) El usuario quiere CREAR una cita
+    if (intencion === "crear_cita") {
+      setEstadoCita(clientId, "esperando_fecha");
 
-    // 4. Obtener respuesta de Lumina (IA)
-    const respuesta = await obtenerRespuestaLumina(
-      message,
-      mode,
-      historyForModel
-    );
+      const respuestaCreacion =
+        "¡Claro! Vamos a programar tu cita. " +
+        "Por favor, dime la fecha y la hora en un solo mensaje. " +
+        "Por ejemplo: \"mañana a las 16:00\" o \"15 de enero a las 10:30\".";
 
-    // 5. Guardar mensaje del usuario
-    await prisma.message.create({
-      data: {
-        role: 'user',
-        content: message,
-        client_id: client.id,
-      },
-    });
+      try {
+        await prisma.message.create({
+          data: {
+            clientId,
+            role: "assistant",
+            content: respuestaCreacion,
+          },
+        });
+      } catch (err) {
+        console.warn(
+          "⚠ No se pudo guardar la respuesta de creación de cita en BD:",
+          err.message
+        );
+      }
 
-    // 6. Guardar respuesta de la IA
-    await prisma.message.create({
-      data: {
-        role: 'assistant',
-        content: respuesta,
-        client_id: client.id,
-      },
-    });
+      return res.json({
+        reply: respuestaCreacion,
+        clientId,
+      });
+    }
 
-    // 7. Responder al frontend
-    res.json({
-      reply: respuesta,
+    // 3.b) El usuario quiere LISTAR citas (por ahora solo respuesta genérica)
+    if (intencion === "listar_citas") {
+      const respuestaListado =
+        "Puedo ayudarte a gestionar tus citas. " +
+        "En esta versión de MyClarix todavía no mostramos un listado detallado, " +
+        "pero puedo registrar nuevas citas y confirmar la información contigo.";
+
+      try {
+        await prisma.message.create({
+          data: {
+            clientId,
+            role: "assistant",
+            content: respuestaListado,
+          },
+        });
+      } catch (err) {
+        console.warn(
+          "⚠ No se pudo guardar la respuesta de listado de citas en BD:",
+          err.message
+        );
+      }
+
+      return res.json({
+        reply: respuestaListado,
+        clientId,
+      });
+    }
+
+    // 4) Si no es nada especial de citas → pasar a la IA normal (Lumina/MyClarix)
+    const respuestaIA = await obtenerRespuestaLumina(clientId, message, mode);
+
+    // Guardar respuesta del asistente (si la tabla existe)
+    try {
+      await prisma.message.create({
+        data: {
+          clientId,
+          role: "assistant",
+          content: respuestaIA,
+        },
+      });
+    } catch (err) {
+      console.warn(
+        "⚠ No se pudo guardar la respuesta de la IA en BD:",
+        err.message
+      );
+    }
+
+    return res.json({
+      reply: respuestaIA,
       clientId,
     });
   } catch (error) {
-    console.error('❌ Error en chatcontroller con Prisma:', error);
-    res.status(500).json({ error: 'Error interno del servidor' });
+    console.error("❌ Error en chatcontroller:", error);
+    return res
+      .status(500)
+      .json({ error: "Error interno del servidor en /api/chat" });
   }
 };
 
-// ➜ NUEVO CONTROLADOR: devuelve el historial de un clientId
-const getHistory = async (req, res) => {
+// ---------------------------------------------------------------------------
+// GET /api/chat/history?clientId=XXXX  → historial básico de mensajes
+// ---------------------------------------------------------------------------
+exports.getHistory = async (req, res) => {
   try {
     const { clientId } = req.query;
 
     if (!clientId) {
-      return res.status(400).json({ error: 'Falta el clientId en la query' });
+      return res.status(400).json({ error: "clientId es obligatorio" });
     }
 
-    // Buscar cliente por api_key
-    const client = await prisma.client.findUnique({
-      where: { api_key: clientId },
-      include: {
-        messages: {
-          orderBy: { created_at: 'asc' },
-        },
-      },
-    });
+    let messages = [];
 
-    if (!client) {
-      // Si no existe ese cliente, devolvemos lista vacía
-      return res.json({ messages: [] });
+    try {
+      messages = await prisma.message.findMany({
+        where: { clientId },
+        orderBy: { createdAt: "asc" },
+      });
+    } catch (err) {
+      console.warn(
+        "⚠ No se pudo obtener el historial desde la BD:",
+        err.message
+      );
     }
 
-    const messages = client.messages.map((m) => ({
-      role: m.role,
-      content: m.content,
-      created_at: m.created_at,
-    }));
-
-    res.json({ messages });
+    return res.json({ clientId, messages });
   } catch (error) {
-    console.error('❌ Error en getHistory:', error);
-    res.status(500).json({ error: 'Error al obtener historial' });
+    console.error("❌ Error en getHistory:", error);
+    return res
+      .status(500)
+      .json({ error: "Error interno del servidor en /api/chat/history" });
   }
 };
-
-module.exports = { chatcontroller, getHistory };
-const intencion = detectarIntencion(message);
-
-if (intencion === "crear_cita") {
-  // IA pedirá fecha y hora, o podrás parsear directamente.
-  return manejarCreacionCita(clientId, message);
-}
-
-if (intencion === "listar_citas") {
-  return manejarListarCitas(clientId);
-}
