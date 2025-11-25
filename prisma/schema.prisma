@@ -23,3 +23,10 @@ model Message {
   client     Client   @relation(fields: [client_id], references: [id])
   client_id  String
 }
+model Appointment {
+  id          String   @id @default(cuid())
+  clientId    String
+  date        DateTime
+  status      String   @default("confirmed")
+  createdAt   DateTime @default(now())
+}

@@ -61,3 +61,24 @@ Responde siempre en español neutro, salvo que el usuario pida otro idioma.
 }
 
 module.exports = { obtenerRespuestaLumina };
+function detectarIntencion(message) {
+  const texto = message.toLowerCase();
+
+  if (texto.includes("cita") && (texto.includes("reservar") || texto.includes("quiero"))) {
+    return "crear_cita";
+  }
+
+  if (texto.includes("cambia") || texto.includes("reprogram")) {
+    return "reprogramar_cita";
+  }
+
+  if (texto.includes("cancel") && texto.includes("cita")) {
+    return "cancelar_cita";
+  }
+
+  if (texto.includes("mis citas") || texto.includes("tengo cita")) {
+    return "listar_citas";
+  }
+
+  return "normal";
+}

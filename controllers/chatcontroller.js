@@ -111,3 +111,13 @@ const getHistory = async (req, res) => {
 };
 
 module.exports = { chatcontroller, getHistory };
+const intencion = detectarIntencion(message);
+
+if (intencion === "crear_cita") {
+  // IA pedirá fecha y hora, o podrás parsear directamente.
+  return manejarCreacionCita(clientId, message);
+}
+
+if (intencion === "listar_citas") {
+  return manejarListarCitas(clientId);
+}
