@@ -55,6 +55,7 @@ Responde siempre en español neutro, salvo que el usuario pida otro idioma.
       "Lo siento, no pude generar una respuesta en este momento."
     );
   } catch (error) {
+    console.log("🔎 Llamando a Groq con clientId:", clientId);
     console.error("❌ Error en obtenerRespuestaLumina:", error);
     throw error;
   }

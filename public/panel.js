@@ -85,16 +85,31 @@ async function sendMessage() {
     });
 
     const data = await res.json();
+    console.log("🔍 Respuesta /api/chat:", res.status, data);
+
+    // Si el servidor devuelve error (500, 400, etc.)
+    if (!res.ok) {
+      addMessage(
+        "assistant",
+        data.error || `Error del servidor (status ${res.status})`
+      );
+      return;
+    }
+
     if (data.reply) {
       addMessage("assistant", data.reply);
     } else {
-      addMessage("assistant", "[Sin respuesta del servidor]");
+      addMessage(
+        "assistant",
+        data.error || "[Sin respuesta del servidor, revisa logs]"
+      );
     }
   } catch (err) {
     console.error("Error enviando mensaje:", err);
     addMessage("assistant", "Ha ocurrido un error al enviar el mensaje.");
   }
 }
+
 
 // Listeners
 sendBtn.addEventListener("click", sendMessage);

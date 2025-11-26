@@ -207,18 +207,12 @@ exports.getHistory = async (req, res) => {
         where: { clientId },
         orderBy: { createdAt: "asc" },
       });
-    } catch (err) {
-      console.warn(
-        "⚠ No se pudo obtener el historial desde la BD:",
-        err.message
-      );
-    }
+      } catch (error) {
+    console.error("❌ Error en chatcontroller:", error);
 
-    return res.json({ clientId, messages });
-  } catch (error) {
-    console.error("❌ Error en getHistory:", error);
-    return res
-      .status(500)
-      .json({ error: "Error interno del servidor en /api/chat/history" });
+    return res.status(500).json({
+      error: "Error interno del servidor en /api/chat",
+      details: error.message || String(error),
+    });
   }
 };
