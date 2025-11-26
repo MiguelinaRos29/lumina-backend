@@ -16,10 +16,8 @@ const { detectarIntencion } = require("../services/intentDetection");
 // ---------------------------------------------------------------------------
 exports.chatcontroller = async (req, res) => {
   try {
-    // 🧩 Nuevo: leemos el contexto que viene del middleware MyClarix
+    // 🧩 Contexto MyClarix
     const { clientId: ctxClientId, companyId } = req.context || {};
-
-    // Mantener compatibilidad: si viene clientId en el body, también vale
     const { clientId: bodyClientId, message, mode } = req.body;
 
     // Prioridad: contexto → body
@@ -28,6 +26,7 @@ exports.chatcontroller = async (req, res) => {
     console.log("🧩 Contexto MyClarix en /api/chat:", {
       clientId,
       companyId,
+      mode,
     });
 
     if (!clientId || !message) {
@@ -43,8 +42,7 @@ exports.chatcontroller = async (req, res) => {
           clientId,
           role: "user",
           content: message,
-          // 🔜 En el futuro, cuando tengas companyId en el modelo:
-          // companyId,
+          // companyId,  // cuando lo añadas al modelo
         },
       });
     } catch (err) {
@@ -57,17 +55,14 @@ exports.chatcontroller = async (req, res) => {
     // 2) Comprobar si hay un estado de cita pendiente
     const estadoCita = getEstadoCita(clientId);
 
-    // Si estábamos esperando la fecha/detalles de la cita
     if (estadoCita === "esperando_fecha") {
       const respuestaCita =
         "Perfecto, he registrado tu cita con estos detalles: " +
         message +
         ". Si quieres cambiarla o añadir más información, dímelo y lo actualizamos.";
 
-      // Limpiamos estado
       limpiarEstadoCita(clientId);
 
-      // Guardar respuesta del asistente (si la tabla existe)
       try {
         await prisma.message.create({
           data: {
@@ -92,6 +87,7 @@ exports.chatcontroller = async (req, res) => {
 
     // 3) Detectar intención del mensaje actual
     const intencion = detectarIntencion(message);
+    console.log("🧠 Intención detectada:", intencion);
 
     // 3.a) El usuario quiere CREAR una cita
     if (intencion === "crear_cita") {
@@ -124,7 +120,7 @@ exports.chatcontroller = async (req, res) => {
       });
     }
 
-    // 3.b) El usuario quiere LISTAR citas (por ahora solo respuesta genérica)
+    // 3.b) El usuario quiere LISTAR citas (respuesta genérica por ahora)
     if (intencion === "listar_citas") {
       const respuestaListado =
         "Puedo ayudarte a gestionar tus citas. " +
@@ -156,7 +152,6 @@ exports.chatcontroller = async (req, res) => {
     // 4) Si no es nada especial de citas → pasar a la IA normal (Lumina/MyClarix)
     const respuestaIA = await obtenerRespuestaLumina(clientId, message, mode);
 
-    // Guardar respuesta del asistente (si la tabla existe)
     try {
       await prisma.message.create({
         data: {
@@ -179,9 +174,11 @@ exports.chatcontroller = async (req, res) => {
     });
   } catch (error) {
     console.error("❌ Error en chatcontroller:", error);
-    return res
-      .status(500)
-      .json({ error: "Error interno del servidor en /api/chat" });
+
+    return res.status(500).json({
+      error: "Error interno del servidor en /api/chat",
+      details: error.message || String(error),
+    });
   }
 };
 
@@ -190,7 +187,6 @@ exports.chatcontroller = async (req, res) => {
 // ---------------------------------------------------------------------------
 exports.getHistory = async (req, res) => {
   try {
-    // 🧩 También aquí leemos el contexto
     const { clientId: ctxClientId } = req.context || {};
     const { clientId: queryClientId } = req.query;
 
@@ -207,11 +203,19 @@ exports.getHistory = async (req, res) => {
         where: { clientId },
         orderBy: { createdAt: "asc" },
       });
-      } catch (error) {
-    console.error("❌ Error en chatcontroller:", error);
+    } catch (err) {
+      console.warn(
+        "⚠ No se pudo obtener el historial desde la BD:",
+        err.message
+      );
+    }
+
+    return res.json({ clientId, messages });
+  } catch (error) {
+    console.error("❌ Error en getHistory:", error);
 
     return res.status(500).json({
-      error: "Error interno del servidor en /api/chat",
+      error: "Error interno del servidor en /api/chat/history",
       details: error.message || String(error),
     });
   }
