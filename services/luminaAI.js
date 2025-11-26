@@ -42,21 +42,22 @@ Responde siempre en español, con un tono cercano y profesional.
 Si no tienes datos suficientes, pide aclaraciones de forma amable.
 `;
 
-    const completion = await groq.chat.completions.create({
-      model: "llama-3.1-70b-versatile",
-      messages: [
-        {
-          role: "system",
-          content: systemPrompt,
-        },
-        {
-          role: "user",
-          content: message,
-        },
-      ],
-      temperature: 0.6,
-      max_tokens: 500,
-    });
+   const completion = await groq.chat.completions.create({
+  model: "llama-3.3-70b-versatile",
+  messages: [
+    {
+      role: "system",
+      content: systemPrompt,
+    },
+    {
+      role: "user",
+      content: message,
+    },
+  ],
+  temperature: 0.6,
+  max_tokens: 500,
+});
+
 
     const respuesta =
       completion.choices?.[0]?.message?.content?.trim() ||
