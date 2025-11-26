@@ -7,8 +7,8 @@ const prisma = new PrismaClient();
  * Crear una nueva cita
  * @param {Object} params
  * @param {string} params.clientId
- * @param {string} params.fecha   - por ahora como string "YYYY-MM-DD"
- * @param {string} params.hora    - por ahora como string "HH:mm"
+ * @param {string} params.fecha      - por ejemplo "28/01/2025"
+ * @param {string} params.hora       - por ejemplo "10:35"
  * @param {number|null} params.duracion
  * @param {string|null} params.proposito
  */
@@ -21,6 +21,7 @@ async function crearCita({ clientId, fecha, hora, duracion, proposito }) {
         hora,
         duracion: duracion ?? null,
         proposito: proposito ?? null,
+        // status y createdAt usan sus valores por defecto
       },
     });
 
@@ -32,7 +33,7 @@ async function crearCita({ clientId, fecha, hora, duracion, proposito }) {
 }
 
 /**
- * Obtener citas (todas o por clientId)
+ * Obtener citas (del cliente o todas)
  * @param {string|null} clientId
  */
 async function obtenerCitas(clientId) {
@@ -41,7 +42,10 @@ async function obtenerCitas(clientId) {
 
     const citas = await prisma.appointment.findMany({
       where,
-      orderBy: [{ fecha: "asc" }, { hora: "asc" }],
+      orderBy: [
+        { fecha: "asc" },
+        { hora: "asc" },
+      ],
     });
 
     return citas;
@@ -52,14 +56,14 @@ async function obtenerCitas(clientId) {
 }
 
 /**
- * Actualizar una cita por id
- * @param {string|number} id
+ * Actualizar una cita
+ * @param {string} id
  * @param {Object} datos
  */
 async function actualizarCita(id, datos) {
   try {
     const citaActualizada = await prisma.appointment.update({
-      where: { id: Number(id) },
+      where: { id },
       data: datos,
     });
 
@@ -71,13 +75,13 @@ async function actualizarCita(id, datos) {
 }
 
 /**
- * Eliminar una cita por id
- * @param {string|number} id
+ * Eliminar una cita
+ * @param {string} id
  */
 async function eliminarCita(id) {
   try {
     await prisma.appointment.delete({
-      where: { id: Number(id) },
+      where: { id },
     });
 
     return true;

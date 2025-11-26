@@ -1,3 +1,5 @@
+// prisma/schema.prisma
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -23,10 +25,14 @@ model Message {
   client     Client   @relation(fields: [client_id], references: [id])
   client_id  String
 }
+
 model Appointment {
   id          String   @id @default(cuid())
   clientId    String
-  date        DateTime
+  fecha       String          // ej: "28/01/2025"
+  hora        String          // ej: "10:35"
+  duracion    Int?            // en minutos
+  proposito   String?         // motivo o descripción
   status      String   @default("confirmed")
   createdAt   DateTime @default(now())
 }
