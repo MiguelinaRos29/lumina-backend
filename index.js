@@ -1,31 +1,27 @@
-// index.js
-require('dotenv').config();
-const express = require('express');
-const cors = require('cors');
-const path = require('path');
+// index.js (backend unificado)
 
-const chatRoutes = require('./routes/chatRoutes');
-
+require("dotenv").config();
+const express = require("express");
+const cors = require("cors");
 const app = express();
-const PORT = process.env.PORT || 4000;
 
 // Middlewares
-app.use(cors());
 app.use(express.json());
+app.use(cors());
 
-// Servir archivos estáticos (tu chat.html, etc.)
-app.use(express.static(path.join(__dirname, 'public')));
+// Rutas API
+const chatRoutes = require("./routes/chatRoutes");
+const appointmentRoutes = require("./routes/appointmentRoutes");
 
-// Ruta principal de API para el chat
-app.use('/api/chat', chatRoutes);
+app.use("/api/chat", chatRoutes);
+app.use("/api/appointments", appointmentRoutes);
 
-// Ruta sencilla para comprobar que el servidor está vivo
-app.get('/', (req, res) => {
-  res.send('Lumina backend está corriendo ✅');
-});
+// Servir panel web
+app.use(express.static("public"));
+
+// Puerto dinámico para Render, 4000 para local
+const PORT = process.env.PORT || 4000;
 
 app.listen(PORT, () => {
-  console.log(`🚀 Servidor Lumina escuchando en el puerto ${PORT}`);
+  console.log(`Servidor Lumina escuchando en el puerto ${PORT}`);
 });
-const appointmentRoutes = require("./routes/appointmentRoutes");
-app.use("/api/appointments", appointmentRoutes);
