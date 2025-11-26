@@ -16,7 +16,19 @@ const { detectarIntencion } = require("../services/intentDetection");
 // ---------------------------------------------------------------------------
 exports.chatcontroller = async (req, res) => {
   try {
-    const { clientId, message, mode } = req.body;
+    // 🧩 Nuevo: leemos el contexto que viene del middleware MyClarix
+    const { clientId: ctxClientId, companyId } = req.context || {};
+
+    // Mantener compatibilidad: si viene clientId en el body, también vale
+    const { clientId: bodyClientId, message, mode } = req.body;
+
+    // Prioridad: contexto → body
+    const clientId = ctxClientId || bodyClientId;
+
+    console.log("🧩 Contexto MyClarix en /api/chat:", {
+      clientId,
+      companyId,
+    });
 
     if (!clientId || !message) {
       return res
@@ -31,10 +43,15 @@ exports.chatcontroller = async (req, res) => {
           clientId,
           role: "user",
           content: message,
+          // 🔜 En el futuro, cuando tengas companyId en el modelo:
+          // companyId,
         },
       });
     } catch (err) {
-      console.warn("⚠ No se pudo guardar el mensaje del usuario en BD:", err.message);
+      console.warn(
+        "⚠ No se pudo guardar el mensaje del usuario en BD:",
+        err.message
+      );
     }
 
     // 2) Comprobar si hay un estado de cita pendiente
@@ -42,7 +59,6 @@ exports.chatcontroller = async (req, res) => {
 
     // Si estábamos esperando la fecha/detalles de la cita
     if (estadoCita === "esperando_fecha") {
-      // Aquí simplemente usamos lo que el usuario diga como detalles de la cita
       const respuestaCita =
         "Perfecto, he registrado tu cita con estos detalles: " +
         message +
@@ -58,10 +74,14 @@ exports.chatcontroller = async (req, res) => {
             clientId,
             role: "assistant",
             content: respuestaCita,
+            // companyId,
           },
         });
       } catch (err) {
-        console.warn("⚠ No se pudo guardar la respuesta de cita en BD:", err.message);
+        console.warn(
+          "⚠ No se pudo guardar la respuesta de cita en BD:",
+          err.message
+        );
       }
 
       return res.json({
@@ -80,7 +100,7 @@ exports.chatcontroller = async (req, res) => {
       const respuestaCreacion =
         "¡Claro! Vamos a programar tu cita. " +
         "Por favor, dime la fecha y la hora en un solo mensaje. " +
-        "Por ejemplo: \"mañana a las 16:00\" o \"15 de enero a las 10:30\".";
+        'Por ejemplo: "mañana a las 16:00" o "15 de enero a las 10:30".';
 
       try {
         await prisma.message.create({
@@ -88,6 +108,7 @@ exports.chatcontroller = async (req, res) => {
             clientId,
             role: "assistant",
             content: respuestaCreacion,
+            // companyId,
           },
         });
       } catch (err) {
@@ -116,6 +137,7 @@ exports.chatcontroller = async (req, res) => {
             clientId,
             role: "assistant",
             content: respuestaListado,
+            // companyId,
           },
         });
       } catch (err) {
@@ -141,6 +163,7 @@ exports.chatcontroller = async (req, res) => {
           clientId,
           role: "assistant",
           content: respuestaIA,
+          // companyId,
         },
       });
     } catch (err) {
@@ -167,7 +190,11 @@ exports.chatcontroller = async (req, res) => {
 // ---------------------------------------------------------------------------
 exports.getHistory = async (req, res) => {
   try {
-    const { clientId } = req.query;
+    // 🧩 También aquí leemos el contexto
+    const { clientId: ctxClientId } = req.context || {};
+    const { clientId: queryClientId } = req.query;
+
+    const clientId = ctxClientId || queryClientId;
 
     if (!clientId) {
       return res.status(400).json({ error: "clientId es obligatorio" });
