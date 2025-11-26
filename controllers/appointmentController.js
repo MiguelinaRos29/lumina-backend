@@ -40,14 +40,11 @@ exports.createAppointment = async (req, res) => {
     }
 
     const nuevaCita = await crearCita({
-      clientId,
-      fecha,
-      hora,
-      duracion,
-      proposito,
-      // 🔜 En el futuro puedes pasar companyId si lo añades al modelo:
-      // companyId,
-    });
+  clientId,
+  fecha,
+  hora
+});
+
 
     // Reseteamos estado conversacional de cita para este cliente
     limpiarEstadoCita(clientId);
