@@ -33,7 +33,10 @@ async function createAppointment(req, res) {
     try {
       setEstadoCita(clientId, { ultimaCita: nuevaCita });
     } catch (e) {
-      console.warn("No se pudo actualizar el estado de la cita en memoria:", e);
+      console.warn(
+        "No se pudo actualizar el estado de la cita en memoria:",
+        e
+      );
     }
 
     return res.status(201).json({
@@ -78,6 +81,12 @@ async function updateAppointment(req, res) {
     }
 
     const citaActualizada = await actualizarCita(id, { fecha, hora, status });
+
+    if (!citaActualizada) {
+      return res.status(400).json({
+        error: "No se han enviado campos válidos para actualizar.",
+      });
+    }
 
     return res.status(200).json({
       success: true,
