@@ -6,72 +6,76 @@ const prisma = new PrismaClient();
 /**
  * Crear una nueva cita
  * @param {Object} params
- * @param {string} params.clientId
- * @param {string} params.fecha      - por ejemplo "28/01/2025"
- * @param {string} params.hora       - por ejemplo "10:35"
- * @param {number|null} params.duracion
- * @param {string|null} params.proposito
+ * @param {string} params.clientId  - ID del cliente
+ * @param {string} params.fecha     - "2025-12-01"
+ * @param {string} params.hora      - "15:00"
  */
-async function crearCita({ clientId, fecha, hora, duracion, proposito }) {
+async function crearCita({ clientId, fecha, hora }) {
   try {
+    // Construimos un objeto Date a partir de fecha + hora
+    const [year, month, day] = fecha.split("-").map(Number); // "2025-12-01"
+    const [hour, minute] = hora.split(":").map(Number);      // "15:00"
+
+    const date = new Date(year, month - 1, day, hour, minute);
+
     const nuevaCita = await prisma.appointment.create({
       data: {
         clientId,
-        fecha,
-        hora,
-        duracion: duracion ?? null,
-        proposito: proposito ?? null,
-        // status y createdAt usan sus valores por defecto
+        date, // 👈 campo real del modelo Prisma
+        // status usará el default "confirmed"
       },
     });
 
     return nuevaCita;
   } catch (error) {
-   console.error("🔥 Error Prisma al crear cita:", {
-  message: error.message,
-  meta: error.meta,
-  code: error.code,
-});
-/**
- * Obtener citas (del cliente o todas)
- * @param {string|null} clientId
- */
-async function obtenerCitas(clientId) {
-  try {
-    const where = clientId ? { clientId } : {};
-
-    const citas = await prisma.appointment.findMany({
-      where,
-      orderBy: [
-        { fecha: "asc" },
-        { hora: "asc" },
-      ],
+    console.error("🔥 Error Prisma al crear cita:", {
+      message: error.message,
+      code: error.code,
+      meta: error.meta,
     });
-
-    return citas;
-  } catch (error) {
-    console.error("❌ Error en obtenerCitas (appointmentService):", error);
     throw error;
   }
+}
+
+/**
+ * Obtener citas de un cliente (o todas si no se pasa clientId)
+ */
+async function obtenerCitas(clientId) {
+  const where = clientId ? { clientId } : {};
+
+  return prisma.appointment.findMany({
+    where,
+    orderBy: { date: "asc" },
+  });
 }
 
 /**
  * Actualizar una cita
  * @param {string} id
  * @param {Object} datos
+ * @param {string} [datos.fecha]
+ * @param {string} [datos.hora]
+ * @param {string} [datos.status]
  */
-async function actualizarCita(id, datos) {
-  try {
-    const citaActualizada = await prisma.appointment.update({
-      where: { id },
-      data: datos,
-    });
+async function actualizarCita(id, { fecha, hora, status }) {
+  const data = {};
 
-    return citaActualizada;
-  } catch (error) {
-    console.error("❌ Error en actualizarCita (appointmentService):", error);
-    throw error;
+  if (fecha && hora) {
+    const [year, month, day] = fecha.split("-").map(Number);
+    const [hourPart, minute] = hora.split(":").map(Number);
+    data.date = new Date(year, month - 1, day, hourPart, minute);
   }
+
+  if (status) {
+    data.status = status;
+  }
+
+  const citaActualizada = await prisma.appointment.update({
+    where: { id },
+    data,
+  });
+
+  return citaActualizada;
 }
 
 /**
@@ -79,16 +83,9 @@ async function actualizarCita(id, datos) {
  * @param {string} id
  */
 async function eliminarCita(id) {
-  try {
-    await prisma.appointment.delete({
-      where: { id },
-    });
-
-    return true;
-  } catch (error) {
-    console.error("❌ Error en eliminarCita (appointmentService):", error);
-    throw error;
-  }
+  await prisma.appointment.delete({
+    where: { id },
+  });
 }
 
 module.exports = {
