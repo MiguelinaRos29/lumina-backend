@@ -27,11 +27,11 @@ async function crearCita({ clientId, fecha, hora, duracion, proposito }) {
 
     return nuevaCita;
   } catch (error) {
-    console.error("❌ Error en crearCita (appointmentService):", error);
-    throw error;
-  }
-}
-
+   console.error("🔥 Error Prisma al crear cita:", {
+  message: error.message,
+  meta: error.meta,
+  code: error.code,
+});
 /**
  * Obtener citas (del cliente o todas)
  * @param {string|null} clientId
