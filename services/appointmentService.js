@@ -1,6 +1,7 @@
 // services/appointmentService.js
 
 const { PrismaClient } = require("@prisma/client");
+const { randomUUID } = require("crypto");
 const prisma = new PrismaClient();
 
 /**
@@ -12,16 +13,16 @@ const prisma = new PrismaClient();
  */
 async function crearCita({ clientId, fecha, hora }) {
   try {
-    // Insertamos en la tabla "Appointment" usando SQL crudo
+    // Generamos un id manualmente porque en la tabla no hay default para id
+    const id = randomUUID();
+
     const result = await prisma.$queryRaw`
-      INSERT INTO "Appointment" ("clientId", "fecha", "hora")
-      VALUES (${clientId}, ${fecha}, ${hora})
+      INSERT INTO "Appointment" ("id", "clientId", "fecha", "hora")
+      VALUES (${id}, ${clientId}, ${fecha}, ${hora})
       RETURNING *;
     `;
 
-    // $queryRaw suele devolver un array de filas
     const nuevaCita = Array.isArray(result) ? result[0] : result;
-
     return nuevaCita;
   } catch (error) {
     console.error("🔥 Error Prisma al crear cita (RAW):", {
@@ -74,17 +75,13 @@ async function obtenerCitas(clientId) {
  */
 async function actualizarCita(id, { fecha, hora, status }) {
   try {
-    // Construimos dinámicamente el UPDATE
     const campos = [];
-    if (fecha) campos.push(`"fecha" = ${fecha}`);
-    if (hora) campos.push(`"hora" = ${hora}`);
-    if (status) campos.push(`"status" = ${status}`);
+    if (fecha) campos.push(`"fecha" = $2`);
+    if (hora) campos.push(`"hora" = $3`);
+    if (status) campos.push(`"status" = $4`);
 
-    if (campos.length === 0) {
-      return null;
-    }
+    if (campos.length === 0) return null;
 
-    // OJO: usamos $executeRaw`...` con parámetros, no concatenación peligrosa
     const setClause = campos.join(", ");
 
     const query = `
@@ -94,7 +91,9 @@ async function actualizarCita(id, { fecha, hora, status }) {
       RETURNING *;
     `;
 
-    const result = await prisma.$queryRawUnsafe(query, id);
+    const params = [id, fecha, hora, status].filter(v => v !== undefined);
+
+    const result = await prisma.$queryRawUnsafe(query, ...params);
     const citaActualizada = Array.isArray(result) ? result[0] : result;
 
     return citaActualizada;
