@@ -13,120 +13,108 @@ const {
   limpiarEstadoCita,
 } = require("../services/appointmentState");
 
-// ---------------------------------------------------------------------------
-// Crear una nueva cita
-// POST /api/appointments
-// ---------------------------------------------------------------------------
-exports.createAppointment = async (req, res) => {
+// ----------------------------------------------------
+// Crear una nueva cita   (POST /api/appointments)
+// ----------------------------------------------------
+async function createAppointment(req, res) {
   try {
-    // 🧩 Contexto MyClarix (viene del middleware)
-    const { clientId: ctxClientId, companyId } = req.context || {};
+    const { clientId, fecha, hora } = req.body;
 
-    // También aceptamos clientId en el body para compatibilidad
-    const { clientId: bodyClientId, fecha, hora, duracion, proposito } = req.body;
-
-    // Prioridad: contexto → body
-    const clientId = ctxClientId || bodyClientId;
-
-    console.log("📅 Contexto MyClarix en createAppointment:", {
-      clientId,
-      companyId,
-    });
-
+    // Validación básica
     if (!clientId || !fecha || !hora) {
       return res.status(400).json({
         error: "Faltan campos obligatorios: clientId, fecha, hora.",
       });
     }
 
-    const nuevaCita = await crearCita({
-  clientId,
-  fecha,
-  hora
-});
+    const nuevaCita = await crearCita({ clientId, fecha, hora });
 
-
-    // Reseteamos estado conversacional de cita para este cliente
-    limpiarEstadoCita(clientId);
+    // Guardar estado en memoria (opcional)
+    try {
+      setEstadoCita(clientId, { ultimaCita: nuevaCita });
+    } catch (e) {
+      console.warn("No se pudo actualizar el estado de la cita en memoria:", e);
+    }
 
     return res.status(201).json({
-      message: "Cita creada correctamente",
-      cita: nuevaCita,
+      success: true,
+      appointment: nuevaCita,
     });
   } catch (error) {
-    console.error("❌ Error al crear cita:", error);
+    console.error("Error en createAppointment:", error);
     return res.status(500).json({ error: "Error al crear cita" });
   }
-};
+}
 
-// ---------------------------------------------------------------------------
-// Obtener citas (del cliente o todas)
-// GET /api/appointments?clientId=XXXX
-// ---------------------------------------------------------------------------
-exports.getAppointments = async (req, res) => {
+// ----------------------------------------------------
+// Obtener citas   (GET /api/appointments?clientId=...)
+// ----------------------------------------------------
+async function getAppointments(req, res) {
   try {
-    // Contexto
-    const { clientId: ctxClientId, companyId } = req.context || {};
-    const { clientId: queryClientId } = req.query;
+    const { clientId } = req.query;
 
-    const clientId = ctxClientId || queryClientId;
+    const citas = await obtenerCitas(clientId);
 
-    console.log("📅 Contexto MyClarix en getAppointments:", {
-      clientId,
-      companyId,
+    return res.status(200).json({
+      success: true,
+      appointments: citas,
     });
-
-    const citas = await obtenerCitas(clientId /*, companyId */);
-
-    return res.json(citas);
   } catch (error) {
-    console.error("❌ Error al obtener citas:", error);
+    console.error("Error en getAppointments:", error);
     return res.status(500).json({ error: "Error al obtener citas" });
   }
-};
+}
 
-// ---------------------------------------------------------------------------
-// Actualizar una cita
-// PUT /api/appointments/:id
-// ---------------------------------------------------------------------------
-exports.updateAppointment = async (req, res) => {
+// ----------------------------------------------------
+// Actualizar cita   (PUT /api/appointments/:id)
+// ----------------------------------------------------
+async function updateAppointment(req, res) {
   try {
     const { id } = req.params;
-    const datos = req.body;
+    const { fecha, hora, status } = req.body;
 
-    const citaActualizada = await actualizarCita(id, datos);
-
-    if (!citaActualizada) {
-      return res.status(404).json({ error: "Cita no encontrada" });
+    if (!id) {
+      return res.status(400).json({ error: "Falta el id de la cita." });
     }
 
-    return res.json({
-      message: "Cita actualizada correctamente",
-      cita: citaActualizada,
+    const citaActualizada = await actualizarCita(id, { fecha, hora, status });
+
+    return res.status(200).json({
+      success: true,
+      appointment: citaActualizada,
     });
   } catch (error) {
-    console.error("❌ Error al actualizar cita:", error);
+    console.error("Error en updateAppointment:", error);
     return res.status(500).json({ error: "Error al actualizar cita" });
   }
-};
+}
 
-// ---------------------------------------------------------------------------
-// Eliminar cita
-// DELETE /api/appointments/:id
-// ---------------------------------------------------------------------------
-exports.deleteAppointment = async (req, res) => {
+// ----------------------------------------------------
+// Eliminar cita   (DELETE /api/appointments/:id)
+// ----------------------------------------------------
+async function deleteAppointment(req, res) {
   try {
     const { id } = req.params;
 
-    const resultado = await eliminarCita(id);
-
-    if (!resultado) {
-      return res.status(404).json({ error: "Cita no encontrada" });
+    if (!id) {
+      return res.status(400).json({ error: "Falta el id de la cita." });
     }
 
-    return res.json({ message: "Cita eliminada correctamente" });
+    await eliminarCita(id);
+
+    return res.status(200).json({
+      success: true,
+      message: "Cita eliminada correctamente",
+    });
   } catch (error) {
-    console.error("❌ Error al eliminar cita:", error);
+    console.error("Error en deleteAppointment:", error);
     return res.status(500).json({ error: "Error al eliminar cita" });
   }
+}
+
+module.exports = {
+  createAppointment,
+  getAppointments,
+  updateAppointment,
+  deleteAppointment,
 };
