@@ -1,174 +1,153 @@
 // controllers/chatcontroller.js
 
-const { PrismaClient } = require("@prisma/client");
-const prisma = new PrismaClient();
-
 const { obtenerRespuestaLumina } = require("../services/luminaAI");
-const {
-  setEstadoCita,
-  getEstadoCita,
-  limpiarEstadoCita,
-} = require("../services/appointmentState");
-const { detectarIntencion } = require("../services/intentDetection");
+const { parseFechaDesdeMensaje } = require("../services/dateParser");
+const { createAppointment } = require("../services/appointmentService");
 
-// ---------------------------------------------------------------------------
-// POST /api/chat  → controlador principal del chat
-// ---------------------------------------------------------------------------
-exports.chatcontroller = async (req, res) => {
+/**
+ * Detecta si el mensaje del usuario habla de una cita,
+ * aunque todavía no tenga fecha/hora concreta.
+ */
+function esIntencionDeCita(texto = "") {
+  const t = texto.toLowerCase();
+
+  return (
+    t.includes("cita") ||
+    t.includes("reunión") ||
+    t.includes("reunion") ||
+    t.includes("consulta") ||
+    t.includes("reservar") ||
+    t.includes("agendar") ||
+    t.includes("pedir hora") ||
+    t.includes("quiero una cita") ||
+    t.includes("quiero pedir una cita")
+  );
+}
+
+/**
+ * Formatea la fecha de la cita en español, bonito para el usuario.
+ */
+function formatearFechaCita(fecha) {
   try {
-    const { clientId, message, mode } = req.body;
-
-    if (!clientId || !message) {
-      return res
-        .status(400)
-        .json({ error: "clientId y message son obligatorios" });
-    }
-
-    // 1) Guardar mensaje del usuario
-    try {
-      await prisma.message.create({
-        data: {
-          clientId,
-          role: "user",
-          content: message,
-        },
-      });
-    } catch (err) {
-      console.warn("⚠ No se pudo guardar el mensaje del usuario:", err.message);
-    }
-
-    // 2) Comprobar si hay un estado pendiente de cita
-    const estadoCita = getEstadoCita(clientId);
-
-    if (estadoCita === "esperando_fecha") {
-      const respuestaCita =
-        "Perfecto. He registrado tu cita con estos detalles: " +
-        message +
-        ". Si quieres añadir cambios, solo dímelo.";
-
-      limpiarEstadoCita(clientId);
-
-      try {
-        await prisma.message.create({
-          data: {
-            clientId,
-            role: "assistant",
-            content: respuestaCita,
-          },
-        });
-      } catch (err) {
-        console.warn("⚠ No se pudo guardar la respuesta de cita:", err.message);
-      }
-
-      return res.json({
-        reply: respuestaCita,
-        clientId,
-      });
-    }
-
-    // 3) Detectar intención (crear o listar citas)
-    const intencion = detectarIntencion(message);
-
-    if (intencion === "crear_cita") {
-      setEstadoCita(clientId, "esperando_fecha");
-
-      const respuestaCreacion =
-        "Perfecto, vamos a crear una cita. Dime la fecha y la hora en un solo mensaje.";
-
-      try {
-        await prisma.message.create({
-          data: {
-            clientId,
-            role: "assistant",
-            content: respuestaCreacion,
-          },
-        });
-      } catch (err) {
-        console.warn("⚠ No se pudo guardar la respuesta:", err.message);
-      }
-
-      return res.json({
-        reply: respuestaCreacion,
-        clientId,
-      });
-    }
-
-    if (intencion === "listar_citas") {
-      const respuestaListado =
-        "Puedo ayudarte a gestionar tus citas. En esta versión todavía no muestro un listado detallado.";
-
-      try {
-        await prisma.message.create({
-          data: {
-            clientId,
-            role: "assistant",
-            content: respuestaListado,
-          },
-        });
-      } catch (err) {
-        console.warn("⚠ No se pudo guardar la respuesta:", err.message);
-      }
-
-      return res.json({
-        reply: respuestaListado,
-        clientId,
-      });
-    }
-
-    // 4) Si no es nada de citas → respuesta normal IA
-    const respuestaIA = await obtenerRespuestaLumina(clientId, message, mode);
-
-    try {
-      await prisma.message.create({
-        data: {
-          clientId,
-          role: "assistant",
-          content: respuestaIA,
-        },
-      });
-    } catch (err) {
-      console.warn("⚠ No se pudo guardar la respuesta de la IA:", err.message);
-    }
-
-    return res.json({
-      reply: respuestaIA,
-      clientId,
+    return fecha.toLocaleString("es-ES", {
+      weekday: "long",
+      day: "2-digit",
+      month: "long",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+      timeZone: "Europe/Madrid",
     });
-  } catch (error) {
-    console.error("❌ Error en chatcontroller:", error);
-    return res
-      .status(500)
-      .json({ error: "Error interno del servidor en /api/chat" });
+  } catch (e) {
+    return fecha.toISOString();
   }
+}
+
+async function chatcontroller(req, res) {
+  try {
+    const { message, clientId, mode } = req.body || {};
+
+    if (!message || !clientId) {
+      return res.status(400).json({
+        error: "Faltan parámetros: 'message' y/o 'clientId'",
+      });
+    }
+
+    console.log("📩 [chatcontroller] Mensaje recibido:", {
+      clientId,
+      message,
+      mode,
+    });
+
+    // 1) Intento de parsear fecha/hora del mensaje
+    const fechaCita = parseFechaDesdeMensaje(message);
+
+    // 2) Si el texto habla de cita y NO hay fecha → pedir fecha/hora
+    if (esIntencionDeCita(message) && !fechaCita) {
+      const text =
+        'Perfecto, vamos a crear una cita. Dime la fecha y la hora en un solo mensaje (por ejemplo: "mañana a las 16:00" o "el 5 de diciembre a las 10:30").';
+
+      const responsePayload = {
+        clientId,
+        type: "appointment_ask_datetime",
+        text,
+        reply: text, // compatibilidad con la versión antigua
+      };
+
+      console.log(
+        "🟡 [chatcontroller] Intención de cita detectada, falta fecha/hora:",
+        responsePayload
+      );
+
+      return res.json(responsePayload);
+    }
+
+    // 3) Si HAY fecha/hora detectada → crear la cita en BD
+    if (fechaCita) {
+      console.log(
+        "🟢 [chatcontroller] Fecha detectada, creando cita en BD:",
+        fechaCita
+      );
+
+      const appointment = await createAppointment(clientId, fechaCita);
+
+const fechaFormateada = formatearFechaCita(fechaCita);
+
+const text = `Perfecto. He registrado tu cita para el ${fechaFormateada}.`;
+
+const responsePayload = {
+  clientId,
+  type: "appointment_created",
+  text,
+  reply: text, // compatibilidad con el antiguo 'reply'
+  appointment: {
+    id: appointment.id,
+    fecha: appointment.fecha,
+    hora: appointment.hora,
+    status: appointment.status,
+  },
 };
 
-// ---------------------------------------------------------------------------
-// GET /api/chat/history?clientId=XXXX
-// ---------------------------------------------------------------------------
-exports.getHistory = async (req, res) => {
-  try {
-    const { clientId } = req.query;
 
-    if (!clientId) {
-      return res.status(400).json({ error: "clientId es obligatorio" });
+      console.log(
+        "✅ [chatcontroller] Cita creada correctamente:",
+        responsePayload
+      );
+
+      return res.json(responsePayload);
     }
 
-    let messages = [];
+    // 4) Si no es cita → chat normal con la IA
+    console.log(
+      "💬 [chatcontroller] Mensaje normal, se envía a la IA (Lumina/MyClarix)"
+    );
 
-    try {
-      messages = await prisma.message.findMany({
-        where: { clientId },
-        orderBy: { createdAt: "asc" },
-      });
-    } catch (err) {
-      console.warn("⚠ No se pudo obtener el historial:", err.message);
-    }
+    // ⚠️ IMPORTANTE:
+    // Ajusta el orden de parámetros si tu función obtenerRespuestaLumina
+    // tiene una firma distinta. Esto es SOLO un ejemplo.
+    const iaReply = await obtenerRespuestaLumina(message, clientId, mode);
 
-    return res.json({ clientId, messages });
+    const responsePayload = {
+      clientId,
+      type: "normal",
+      text: iaReply,
+      reply: iaReply, // para compatibilidad con la app actual
+    };
+
+    console.log("🤖 [chatcontroller] Respuesta IA:", responsePayload);
+
+    return res.json(responsePayload);
   } catch (error) {
-    console.error("❌ Error en getHistory:", error);
-    return res
-      .status(500)
-      .json({ error: "Error interno del servidor en /api/chat/history" });
+    console.error("❌ [chatcontroller] Error:", error);
+
+    return res.status(500).json({
+      error: "Error interno en el chatcontroller",
+      details: error.message,
+    });
   }
+}
+
+module.exports = {
+  chatcontroller,
 };

@@ -12,6 +12,7 @@ app.use(cors());
 // Rutas API
 const chatRoutes = require("./routes/chatRoutes");
 const appointmentRoutes = require("./routes/appointmentRoutes");
+
 app.get('/', (req, res) => {
   res.send('Lumina backend (MyClarix) está corriendo correctamente 🚀');
 });

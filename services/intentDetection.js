@@ -1,25 +1,27 @@
 // services/intentDetection.js
 
+/**
+ * Analiza el mensaje y devuelve un tipo de intención
+ * 
+ * Posibles respuestas:
+ * - "CREAR_CITA"
+ * - null  (si no detecta intención especial)
+ */
 function detectarIntencion(message) {
+  if (!message) return null;
+
   const texto = message.toLowerCase();
 
-  if (texto.includes("cita") && (texto.includes("reservar") || texto.includes("quiero"))) {
-    return "crear_cita";
+  // Palabras que nos indican que quiere una cita
+  const palabrasCita = ["cita", "agendar", "agenda", "reservar", "reserva", "apúntame", "apuntame"];
+
+  const contieneCita = palabrasCita.some((p) => texto.includes(p));
+
+  if (contieneCita) {
+    return "CREAR_CITA";
   }
 
-  if (texto.includes("mis citas") || texto.includes("tengo cita")) {
-    return "listar_citas";
-  }
-
-  if ((texto.includes("cambia") || texto.includes("reprogram")) && texto.includes("cita")) {
-    return "reprogramar_cita";
-  }
-
-  if (texto.includes("cancel") && texto.includes("cita")) {
-    return "cancelar_cita";
-  }
-
-  return "normal";
+  return null;
 }
 
 module.exports = { detectarIntencion };
