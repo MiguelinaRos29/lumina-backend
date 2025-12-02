@@ -1,11 +1,10 @@
 // services/appointmentService.js
-
 const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
 
 /**
  * Crea una nueva cita en la base de datos
- * @param {string} clientId - ID del cliente (tabla Client)
+ * @param {string} clientId - ID del cliente
  * @param {Date} date - Fecha de la cita (objeto Date de JS)
  * @returns {Promise<object>} - Cita creada
  */
@@ -22,16 +21,17 @@ async function createAppointment(clientId, date) {
     date,
   });
 
-  const horaTexto = date.toTimeString().slice(0, 5);    // "16:00"
-  const fechaTexto = date.toISOString();                // o solo fecha si quieres
+  const horaTexto = date.toTimeString().slice(0, 5); // "16:00"
+  const fechaTexto = date.toISOString(); // ISO completa
 
+  // 👇 IMPORTANTE: aquí usamos SOLO campos que existen en tu modelo
   const appointment = await prisma.appointment.create({
     data: {
       clientId,
       status: "confirmed",
-      fecha: fechaTexto,   // campo String en tu modelo
-      hora: horaTexto,     // campo String en tu modelo
-      // duration, proposito se pueden añadir más adelante si quieres
+      fecha: fechaTexto,
+      hora: horaTexto,
+      // duration y proposito los dejamos opcionales para más adelante
     },
   });
 
@@ -41,7 +41,7 @@ async function createAppointment(clientId, date) {
 }
 
 /**
- * (Opcional) Obtener todas las citas de un cliente
+ * Devuelve todas las citas de un cliente
  */
 async function getAppointmentsByClient(clientId) {
   if (!clientId) {
