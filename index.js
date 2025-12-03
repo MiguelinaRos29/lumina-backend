@@ -1,13 +1,17 @@
-// index.js (backend unificado)
+// index.js – Backend unificado limpio
+
+require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const bodyParser = require("body-parser");
+
 const chatController = require("./controllers/chatcontroller");
 const { listAppointments } = require("./controllers/appointmentController");
 
 const app = express();
 const PORT = process.env.PORT || 10000;
 
+// Middlewares
 app.use(cors());
 app.use(bodyParser.json());
 
@@ -19,39 +23,9 @@ app.get("/", (req, res) => {
 // Chat
 app.post("/api/chat", chatController);
 
-// 🔹 NUEVA RUTA: obtener citas por clientId
+// Obtener citas
 app.get("/api/appointments", listAppointments);
 
 app.listen(PORT, () => {
   console.log(`🚀 Servidor Lumina escuchando en el puerto ${PORT}`);
-});
-
-require("dotenv").config();
-const express = require("express");
-const cors = require("cors");
-const app = express();
-
-// Middlewares
-app.use(express.json());
-app.use(cors());
-
-// Rutas API
-const chatRoutes = require("./routes/chatRoutes");
-const appointmentRoutes = require("./routes/appointmentRoutes");
-
-app.get('/', (req, res) => {
-  res.send('Lumina backend (MyClarix) está corriendo correctamente 🚀');
-});
-
-app.use("/api/chat", chatRoutes);
-app.use("/api/appointments", appointmentRoutes);
-
-// Servir panel web
-app.use(express.static("public"));
-
-// Puerto dinámico para Render, 4000 para local
-const PORT = process.env.PORT || 4000;
-
-app.listen(PORT, () => {
-  console.log(`Servidor Lumina escuchando en el puerto ${PORT}`);
 });
