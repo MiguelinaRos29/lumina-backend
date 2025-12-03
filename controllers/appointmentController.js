@@ -1,129 +1,45 @@
 // controllers/appointmentController.js
+const { PrismaClient } = require("@prisma/client");
+const prisma = new PrismaClient();
 
-const {
-  crearCita,
-  obtenerCitas,
-  actualizarCita,
-  eliminarCita,
-} = require("../services/appointmentService");
-
-const {
-  getEstadoCita,
-  setEstadoCita,
-  limpiarEstadoCita,
-} = require("../services/appointmentState");
-
-// ----------------------------------------------------
-// Crear una nueva cita   (POST /api/appointments)
-// ----------------------------------------------------
-async function createAppointment(req, res) {
-  try {
-    const { clientId, fecha, hora } = req.body;
-
-    // Validación básica
-    if (!clientId || !fecha || !hora) {
-      return res.status(400).json({
-        error: "Faltan campos obligatorios: clientId, fecha, hora.",
-      });
-    }
-
-    const nuevaCita = await crearCita({ clientId, fecha, hora });
-
-    // Guardar estado en memoria (opcional)
-    try {
-      setEstadoCita(clientId, { ultimaCita: nuevaCita });
-    } catch (e) {
-      console.warn(
-        "No se pudo actualizar el estado de la cita en memoria:",
-        e
-      );
-    }
-
-    return res.status(201).json({
-      success: true,
-      appointment: nuevaCita,
-    });
-  } catch (error) {
-    console.error("Error en createAppointment:", error);
-    return res.status(500).json({ error: "Error al crear cita" });
-  }
+/**
+ * Crear una cita (por si la usamos fuera del chat)
+ */
+async function createAppointment(clientId, date) {
+  return prisma.appointment.create({
+    data: {
+      clientId,
+      date,
+      status: "confirmed",
+    },
+  });
 }
 
-// ----------------------------------------------------
-// Obtener citas   (GET /api/appointments?clientId=...)
-// ----------------------------------------------------
-async function getAppointments(req, res) {
+/**
+ * Controlador para listar citas de un clientId
+ * GET /api/appointments?clientId=XXX
+ */
+async function listAppointments(req, res) {
   try {
     const { clientId } = req.query;
 
-    const citas = await obtenerCitas(clientId);
-
-    return res.status(200).json({
-      success: true,
-      appointments: citas,
-    });
-  } catch (error) {
-    console.error("Error en getAppointments:", error);
-    return res.status(500).json({ error: "Error al obtener citas" });
-  }
-}
-
-// ----------------------------------------------------
-// Actualizar cita   (PUT /api/appointments/:id)
-// ----------------------------------------------------
-async function updateAppointment(req, res) {
-  try {
-    const { id } = req.params;
-    const { fecha, hora, status } = req.body;
-
-    if (!id) {
-      return res.status(400).json({ error: "Falta el id de la cita." });
+    if (!clientId) {
+      return res.status(400).json({ error: "El parámetro clientId es obligatorio." });
     }
 
-    const citaActualizada = await actualizarCita(id, { fecha, hora, status });
-
-    if (!citaActualizada) {
-      return res.status(400).json({
-        error: "No se han enviado campos válidos para actualizar.",
-      });
-    }
-
-    return res.status(200).json({
-      success: true,
-      appointment: citaActualizada,
+    const appointments = await prisma.appointment.findMany({
+      where: { clientId },
+      orderBy: { date: "asc" },
     });
+
+    return res.json({ appointments });
   } catch (error) {
-    console.error("Error en updateAppointment:", error);
-    return res.status(500).json({ error: "Error al actualizar cita" });
-  }
-}
-
-// ----------------------------------------------------
-// Eliminar cita   (DELETE /api/appointments/:id)
-// ----------------------------------------------------
-async function deleteAppointment(req, res) {
-  try {
-    const { id } = req.params;
-
-    if (!id) {
-      return res.status(400).json({ error: "Falta el id de la cita." });
-    }
-
-    await eliminarCita(id);
-
-    return res.status(200).json({
-      success: true,
-      message: "Cita eliminada correctamente",
-    });
-  } catch (error) {
-    console.error("Error en deleteAppointment:", error);
-    return res.status(500).json({ error: "Error al eliminar cita" });
+    console.error("Error al listar citas:", error);
+    return res.status(500).json({ error: "Error al obtener las citas." });
   }
 }
 
 module.exports = {
   createAppointment,
-  getAppointments,
-  updateAppointment,
-  deleteAppointment,
+  listAppointments,
 };
