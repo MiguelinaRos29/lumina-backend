@@ -23,8 +23,12 @@ async function listAppointments(req, res) {
   try {
     const { clientId } = req.query;
 
+    console.log("➡ listAppointments llamado con clientId:", clientId);
+
     if (!clientId) {
-      return res.status(400).json({ error: "El parámetro clientId es obligatorio." });
+      return res
+        .status(400)
+        .json({ error: "El parámetro clientId es obligatorio." });
     }
 
     const appointments = await prisma.appointment.findMany({
@@ -32,10 +36,12 @@ async function listAppointments(req, res) {
       orderBy: { date: "asc" },
     });
 
+    console.log("✅ Citas encontradas:", appointments.length);
+
     return res.json({ appointments });
   } catch (error) {
-    console.error("Error al listar citas:", error);
-    return res.status(500).json({ error: "Error al obtener las citas." });
+    console.error("❌ Error al obtener citas:", error);
+    return res.status(500).json({ error: "Error al obtener citas" });
   }
 }
 
