@@ -23,13 +23,10 @@ app.get("/", (req, res) => {
 // Chat
 app.post("/api/chat", chatController);
 
-// Rutas de citas
-// POST /api/appointments
-// GET  /api/appointments?clientId=...
-// PUT  /api/appointments/:id
-// DELETE /api/appointments/:id
+// Citas
 app.use("/api/appointments", appointmentRoutes);
 
+// Arranque del servidor
 app.listen(PORT, () => {
   console.log(`🚀 Servidor Lumina escuchando en el puerto ${PORT}`);
 });
