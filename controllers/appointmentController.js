@@ -100,13 +100,12 @@ const getAppointments = async (req, res) => {
     const where = {};
     if (clientId) where.clientId = clientId;
 
-    // 👇 AQUÍ PRISMA: NADA DE "date", SOLO "createdAt"
     const appointments = await prisma.appointment.findMany({
       where,
-      orderBy: { createdAt: "asc" },
+      orderBy: { createdAt: "asc" }, // 👈 aquí ya no usamos "date"
     });
 
-    // 👇 AQUÍ adaptamos para la app móvil: añadimos un campo "date"
+    // Adaptamos fecha + hora a un campo "date" para la app móvil
     const mapped = appointments.map((a) => {
       let isoDate = null;
       try {
@@ -115,16 +114,17 @@ const getAppointments = async (req, res) => {
           isoDate = new Date(`${y}-${m}-${d}T${a.hora}:00`);
         }
       } catch (e) {
-        // si algo falla, isoDate se queda en null
+        // si falla, isoDate se queda en null
       }
 
       return {
         ...a,
-        date: isoDate, // 👈 campo que la app espera
+        date: isoDate, // 👈 campo que la app usa como Date
       };
     });
 
-    return res.json(mapped);
+    // 👇 IMPORTANTE: volvemos al formato que espera la app
+    return res.json({ appointments: mapped });
   } catch (error) {
     console.error("❌ Error en getAppointments:", error);
     return res.status(500).json({
@@ -133,8 +133,6 @@ const getAppointments = async (req, res) => {
     });
   }
 };
-
-
 
 // =======================
 // Actualizar cita
