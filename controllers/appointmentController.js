@@ -39,6 +39,7 @@ const getAppointments = async (req, res) => {
   try {
     const { clientId } = req.query;
 
+    // Si nos dan clientId, filtramos. Si no, devolvemos todas.
     const where = clientId ? { clientId } : {};
 
     const appointments = await prisma.appointment.findMany({
