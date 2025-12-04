@@ -6,7 +6,7 @@ const cors = require("cors");
 const bodyParser = require("body-parser");
 
 const chatController = require("./controllers/chatcontroller");
-const { listAppointments } = require("./controllers/appointmentController");
+const appointmentRoutes = require("./routes/appointmentRoutes");
 
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -17,14 +17,18 @@ app.use(bodyParser.json());
 
 // Ruta de prueba
 app.get("/", (req, res) => {
-  res.send("Lumina/MyClarix backend está corriendo");
+  res.send("Lumina backend (MyClarix) está corriendo correctamente 🚀");
 });
 
 // Chat
 app.post("/api/chat", chatController);
 
-// Obtener citas
-app.get("/api/appointments", listAppointments);
+// Rutas de citas
+// POST /api/appointments
+// GET  /api/appointments?clientId=...
+// PUT  /api/appointments/:id
+// DELETE /api/appointments/:id
+app.use("/api/appointments", appointmentRoutes);
 
 app.listen(PORT, () => {
   console.log(`🚀 Servidor Lumina escuchando en el puerto ${PORT}`);
