@@ -3,23 +3,75 @@
 const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
 
-// Crear cita (REST)
+/**
+ * Convierte un Date (o string de fecha) a { fecha, hora }
+ * fecha: "dd/MM/yyyy"
+ * hora : "HH:mm"
+ */
+function parseToFechaHora(dateInput) {
+  if (!dateInput) return { fecha: null, hora: null };
+
+  const d = new Date(dateInput);
+  if (isNaN(d.getTime())) return { fecha: null, hora: null };
+
+  const pad = (n) => (n < 10 ? "0" + n : "" + n);
+
+  const fecha = `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
+  const hora = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+
+  return { fecha, hora };
+}
+
+// =======================
+// Crear cita (REST / API)
+// =======================
+
 const createAppointment = async (req, res) => {
   try {
-    const { clientId, date, status } = req.body;
+    const {
+      clientId,
+      // formato alternativo: fecha/hora ya calculados
+      fecha,
+      hora,
+      duracion,
+      proposito,
+      status,
+      // formato alternativo: date único (ISO) desde el chat / frontend
+      date,
+    } = req.body;
 
-    if (!clientId || !date) {
+    if (!clientId) {
       return res
         .status(400)
-        .json({ error: "clientId y date son obligatorios" });
+        .json({ error: "clientId es obligatorio" });
     }
 
-    const appointmentDate = new Date(date);
+    // Normalizamos fecha/hora
+    let finalFecha = fecha || null;
+    let finalHora = hora || null;
+
+    if ((!finalFecha || !finalHora) && date) {
+      const parsed = parseToFechaHora(date);
+      if (parsed.fecha && parsed.hora) {
+        finalFecha = finalFecha || parsed.fecha;
+        finalHora  = finalHora || parsed.hora;
+      }
+    }
+
+    if (!finalFecha || !finalHora) {
+      return res.status(400).json({
+        error:
+          "Debes proporcionar fecha y hora (ya sea como campos separados o a partir de un 'date').",
+      });
+    }
 
     const appointment = await prisma.appointment.create({
       data: {
         clientId,
-        date: appointmentDate,
+        fecha: finalFecha,
+        hora: finalHora,
+        duracion: typeof duracion === "number" ? duracion : null,
+        proposito: proposito || null,
         status: status || "confirmed",
       },
     });
@@ -27,24 +79,27 @@ const createAppointment = async (req, res) => {
     return res.status(201).json({ appointment });
   } catch (error) {
     console.error("❌ Error en createAppointment:", error);
-    return res
-      .status(500)
-      .json({ error: "Error al crear la cita", details: error.message });
+    return res.status(500).json({
+      error: "Error al crear la cita",
+      details: error.message,
+    });
   }
 };
 
+// =======================
 // Listar citas
-// GET /api/appointments?clientId=xxxx
+// GET /api/appointments?clientId=...
+// =======================
+
 const getAppointments = async (req, res) => {
   try {
     const { clientId } = req.query;
 
-    // Si nos dan clientId, filtramos. Si no, devolvemos todas.
     const where = clientId ? { clientId } : {};
 
     const appointments = await prisma.appointment.findMany({
       where,
-      orderBy: { date: "asc" },
+      orderBy: { createdAt: "asc" },
     });
 
     return res.json({ appointments });
@@ -57,14 +112,41 @@ const getAppointments = async (req, res) => {
   }
 };
 
+// =======================
 // Actualizar cita
+// PUT /api/appointments/:id
+// =======================
+
 const updateAppointment = async (req, res) => {
   try {
     const { id } = req.params;
-    const { date, status } = req.body;
+    const {
+      fecha,
+      hora,
+      duracion,
+      proposito,
+      status,
+      date, // opcional: si te mandan una nueva fecha/hora en un solo campo
+    } = req.body;
 
     const data = {};
-    if (date) data.date = new Date(date);
+
+    let finalFecha = fecha || null;
+    let finalHora = hora || null;
+
+    if ((!finalFecha || !finalHora) && date) {
+      const parsed = parseToFechaHora(date);
+      if (parsed.fecha && parsed.hora) {
+        finalFecha = finalFecha || parsed.fecha;
+        finalHora  = finalHora || parsed.hora;
+      }
+    }
+
+    if (finalFecha) data.fecha = finalFecha;
+    if (finalHora) data.hora = finalHora;
+
+    if (typeof duracion === "number") data.duracion = duracion;
+    if (proposito) data.proposito = proposito;
     if (status) data.status = status;
 
     const updated = await prisma.appointment.update({
@@ -82,7 +164,11 @@ const updateAppointment = async (req, res) => {
   }
 };
 
+// =======================
 // Eliminar cita
+// DELETE /api/appointments/:id
+// =======================
+
 const deleteAppointment = async (req, res) => {
   try {
     const { id } = req.params;
