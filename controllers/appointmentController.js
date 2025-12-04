@@ -131,6 +131,7 @@ const getAppointments = async (req, res) => {
 };
 
 
+
 // =======================
 // Actualizar cita
 // PUT /api/appointments/:id
