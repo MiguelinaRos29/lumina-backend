@@ -95,22 +95,41 @@ const getAppointments = async (req, res) => {
   try {
     const { clientId } = req.query;
 
-    const where = clientId ? { clientId } : {};
+    const where = {};
+    if (clientId) where.clientId = clientId;
 
     const appointments = await prisma.appointment.findMany({
       where,
       orderBy: { createdAt: "asc" },
     });
 
-    return res.json({ appointments });
+    // 🔥 Convertimos fecha + hora → date (ISO válido para la app)
+    const mapped = appointments.map((a) => {
+      let isoDate = null;
+      try {
+        // fecha = "05/12/2025", hora = "11:00"
+        if (a.fecha && a.hora) {
+          const [d, m, y] = a.fecha.split("/");
+          isoDate = new Date(`${y}-${m}-${d}T${a.hora}:00`);
+        }
+      } catch (e) {}
+
+      return {
+        ...a,
+        date: isoDate, // <-- La app ya reconoce este campo
+      };
+    });
+
+    return res.json(mapped);
   } catch (error) {
-    console.error("❌ Error en getAppointments:", error);
+    console.error("❌ Error al obtener citas:", error);
     return res.status(500).json({
       error: "Error al obtener las citas",
       details: error.message,
     });
   }
 };
+
 
 // =======================
 // Actualizar cita
