@@ -91,6 +91,8 @@ const createAppointment = async (req, res) => {
 // GET /api/appointments?clientId=...
 // =======================
 
+// Listar citas
+// GET /api/appointments?clientId=...
 const getAppointments = async (req, res) => {
   try {
     const { clientId } = req.query;
@@ -98,31 +100,33 @@ const getAppointments = async (req, res) => {
     const where = {};
     if (clientId) where.clientId = clientId;
 
+    // 👇 AQUÍ PRISMA: NADA DE "date", SOLO "createdAt"
     const appointments = await prisma.appointment.findMany({
       where,
       orderBy: { createdAt: "asc" },
     });
 
-    // 🔥 Convertimos fecha + hora → date (ISO válido para la app)
+    // 👇 AQUÍ adaptamos para la app móvil: añadimos un campo "date"
     const mapped = appointments.map((a) => {
       let isoDate = null;
       try {
-        // fecha = "05/12/2025", hora = "11:00"
         if (a.fecha && a.hora) {
-          const [d, m, y] = a.fecha.split("/");
+          const [d, m, y] = a.fecha.split("/"); // "05/12/2025"
           isoDate = new Date(`${y}-${m}-${d}T${a.hora}:00`);
         }
-      } catch (e) {}
+      } catch (e) {
+        // si algo falla, isoDate se queda en null
+      }
 
       return {
         ...a,
-        date: isoDate, // <-- La app ya reconoce este campo
+        date: isoDate, // 👈 campo que la app espera
       };
     });
 
     return res.json(mapped);
   } catch (error) {
-    console.error("❌ Error al obtener citas:", error);
+    console.error("❌ Error en getAppointments:", error);
     return res.status(500).json({
       error: "Error al obtener las citas",
       details: error.message,
