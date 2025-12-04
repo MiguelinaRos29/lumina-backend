@@ -148,6 +148,5 @@ const responsePayload = {
   }
 }
 
-module.exports = {
-  chatcontroller,
-};
+module.exports = chatcontroller;
+
