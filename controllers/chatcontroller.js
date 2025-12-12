@@ -1,214 +1,118 @@
-// public/panel.js
+// controllers/chatcontroller.js
+const { PrismaClient } = require("@prisma/client");
+const prisma = new PrismaClient();
 
-// URL del backend (Render)
-const API_URL = "https://lumina-backend-5-oy8n.onrender.com";
+const { createAppointment } = require("../services/appointmentService");
+const { parseFechaDesdeMensaje } = require("../services/dateParser");
+const { detectarIntencion } = require("../services/intentDetection");
+const { obtenerRespuestaLumina } = require("../services/luminaAI");
 
-// Usaremos un clientId fijo para la web (por ahora)
-const clientId = "web_client_demo";
-const companyId = "company_web_demo"; // demo para distinguir la web
-
-document.getElementById("clientIdLabel").textContent = clientId;
-
-const messagesDiv = document.getElementById("messages");
-const citasDiv = document.getElementById("citasLista");
-const messageInput = document.getElementById("messageInput");
-const sendBtn = document.getElementById("sendBtn");
-const modeSelect = document.getElementById("modeSelect");
-
-const citaForm = document.getElementById("citaForm");
-const fechaInput = document.getElementById("fechaInput");
-const horaInput = document.getElementById("horaInput");
-const duracionInput = document.getElementById("duracionInput");
-const propositoInput = document.getElementById("propositoInput");
-
-// Helpers para pintar mensajes
-function addMessage(role, content) {
-  const div = document.createElement("div");
-  div.classList.add("message", role === "user" ? "user" : "assistant");
-  const span = document.createElement("span");
-  span.classList.add("role");
-  span.textContent = role === "user" ? "Tú:" : "MyClarix:";
-  div.appendChild(span);
-  div.append(" " + content);
-  messagesDiv.appendChild(div);
-  messagesDiv.scrollTop = messagesDiv.scrollHeight;
+/**
+ * Formatea un DateTime a "YYYY-MM-DD" en local.
+ */
+function dateToFechaStr(d) {
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
 }
 
-// Cargar historial al abrir
-async function loadHistory() {
-  try {
-    const res = await fetch(
-      `${API_URL}/api/chat/history?clientId=${encodeURIComponent(clientId)}`,
-      {
-        headers: {
-          "x-client-id": clientId,
-          "x-company-id": companyId,
-        },
-      }
-    );
+async function asegurarCliente(clientId) {
+  const existe = await prisma.client.findUnique({ where: { id: clientId } });
+  if (existe) return existe;
 
-    const data = await res.json();
-    messagesDiv.innerHTML = "";
-    if (data.messages && Array.isArray(data.messages)) {
-      data.messages.forEach((msg) => {
-        addMessage(msg.role, msg.content);
-      });
+  return prisma.client.create({
+    data: {
+      id: clientId,
+      name: "Cliente",
+      api_key: `temp_${clientId}`, // unique
+    },
+  });
+}
+
+async function guardarMensaje(clientId, role, content) {
+  await asegurarCliente(clientId);
+  return prisma.message.create({
+    data: { client_id: clientId, role, content },
+  });
+}
+
+/**
+ * POST /api/chat
+ * body: { clientId, message, mode? }
+ */
+async function chatcontroller(req, res) {
+  try {
+    const { clientId, message, mode = null } = req.body;
+
+    if (!clientId) return res.status(400).json({ error: "clientId requerido" });
+    if (!message || typeof message !== "string") {
+      return res.status(400).json({ error: "message requerido" });
     }
+
+    await guardarMensaje(clientId, "user", message);
+
+    const intencion = detectarIntencion(message);
+
+    // ---- Citas ----
+    if (intencion === "CREAR_CITA") {
+      const parsedDate = parseFechaDesdeMensaje(message);
+
+      if (!parsedDate) {
+        const reply = "Entendido. ¿Para qué día y a qué hora quieres la cita?";
+        await guardarMensaje(clientId, "assistant", reply);
+        return res.json({ reply });
+      }
+
+      parsedDate.setSeconds(0);
+      parsedDate.setMilliseconds(0);
+
+      // createAppointment ya evita duplicados por @@unique([clientId, fecha])
+      const appointment = await createAppointment(clientId, parsedDate, null);
+
+      const fechaStr = dateToFechaStr(appointment.fecha);
+      const reply = `Perfecto. He registrado tu cita para el ${fechaStr}, ${appointment.hora}.`;
+
+      await guardarMensaje(clientId, "assistant", reply);
+      return res.json({ reply, appointment });
+    }
+
+    // ---- IA normal (si no es cita) ----
+    const reply = await obtenerRespuestaLumina(clientId, message, mode);
+    await guardarMensaje(clientId, "assistant", reply);
+
+    return res.json({ reply });
   } catch (err) {
-    console.error("Error cargando historial:", err);
+    console.error("❌ Error en chatcontroller:", err);
+    return res.status(500).json({
+      error: "Error interno del servidor",
+      details: err.message || String(err),
+    });
   }
 }
 
-// Enviar mensaje de chat
-async function sendMessage() {
-  const text = messageInput.value.trim();
-  if (!text) return;
-
-  const mode = modeSelect.value || null;
-
-  addMessage("user", text);
-  messageInput.value = "";
-
+/**
+ * GET /api/chat/history?clientId=...
+ */
+async function getChatHistoryController(req, res) {
   try {
-    const res = await fetch(`${API_URL}/api/chat`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-client-id": clientId,
-        "x-company-id": companyId,
-      },
-      body: JSON.stringify({
-        clientId,
-        message: text,
-        mode,
-      }),
+    const { clientId } = req.query;
+    if (!clientId) return res.status(400).json({ error: "clientId requerido" });
+
+    const messages = await prisma.message.findMany({
+      where: { client_id: clientId },
+      orderBy: { created_at: "asc" },
+      select: { id: true, role: true, content: true, created_at: true },
     });
 
-    const data = await res.json();
-    console.log("🔍 Respuesta /api/chat:", res.status, data);
-
-    // Si el servidor devuelve error (500, 400, etc.)
-    if (!res.ok) {
-      addMessage(
-        "assistant",
-        data.error || `Error del servidor (status ${res.status})`
-      );
-      return;
-    }
-
-    if (data.reply) {
-      addMessage("assistant", data.reply);
-    } else {
-      addMessage(
-        "assistant",
-        data.error || "[Sin respuesta del servidor, revisa logs]"
-      );
-    }
+    return res.json({ messages });
   } catch (err) {
-    console.error("Error enviando mensaje:", err);
-    addMessage("assistant", "Ha ocurrido un error al enviar el mensaje.");
-  }
-}
-
-
-// Listeners
-sendBtn.addEventListener("click", sendMessage);
-messageInput.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") {
-    e.preventDefault();
-    sendMessage();
-  }
-});
-
-// -----------------------------
-// Citas
-// -----------------------------
-
-async function loadCitas() {
-  try {
-    const res = await fetch(
-      `${API_URL}/api/appointments?clientId=${encodeURIComponent(clientId)}`,
-      {
-        headers: {
-          "x-client-id": clientId,
-          "x-company-id": companyId,
-        },
-      }
-    );
-
-    const data = await res.json();
-    citasDiv.innerHTML = "";
-    if (Array.isArray(data) && data.length > 0) {
-      data.forEach((cita) => {
-        const div = document.createElement("div");
-        div.classList.add("cita");
-        div.innerHTML = `
-          <div><strong>${cita.fecha || ""} ${cita.hora || ""}</strong></div>
-          <div>${cita.proposito || ""}</div>
-          <div class="small">Duración: ${cita.duracion || "-"} min</div>
-        `;
-        citasDiv.appendChild(div);
-      });
-    } else {
-      citasDiv.innerHTML =
-        '<div class="small">No hay citas registradas.</div>';
-    }
-  } catch (err) {
-    console.error("Error cargando citas:", err);
-    citasDiv.innerHTML = '<div class="small">Error al cargar citas.</div>';
-  }
-}
-
-citaForm.addEventListener("submit", async (e) => {
-  e.preventDefault();
-
-  const fecha = fechaInput.value;
-  const hora = horaInput.value;
-  const duracion = duracionInput.value
-    ? parseInt(duracionInput.value, 10)
-    : null;
-  const proposito = propositoInput.value.trim();
-
-  if (!fecha || !hora) {
-    alert("Fecha y hora son obligatorias");
-    return;
-  }
-
-  try {
-    const res = await fetch(`${API_URL}/api/appointments`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-client-id": clientId,
-        "x-company-id": companyId,
-      },
-      body: JSON.stringify({
-        clientId,
-        fecha,
-        hora,
-        duracion,
-        proposito,
-      }),
+    console.error("❌ Error en getChatHistoryController:", err);
+    return res.status(500).json({
+      error: "Error interno del servidor",
+      details: err.message || String(err),
     });
-
-    const data = await res.json();
-    if (res.ok) {
-      alert("Cita creada correctamente");
-      // limpiar formulario
-      propositoInput.value = "";
-      duracionInput.value = "";
-      // recargar citas
-      loadCitas();
-    } else {
-      alert(data.error || "Error al crear cita");
-    }
-  } catch (err) {
-    console.error("Error creando cita:", err);
-    alert("Error al crear cita");
   }
-});
+}
 
-// Cargar datos al iniciar
-loadHistory();
-loadCitas();
-
+module.exports = { chatcontroller, getChatHistoryController };
