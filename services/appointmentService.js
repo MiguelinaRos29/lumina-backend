@@ -3,60 +3,142 @@ const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
 
 /**
- * Crea una nueva cita en la base de datos
- * @param {string} clientId - ID del cliente
- * @param {Date} date - Fecha de la cita (objeto Date de JS)
- * @returns {Promise<object>} - Cita creada
+ * Convierte un Date a "HH:MM" en hora local (para mostrar).
  */
-async function createAppointment(clientId, date) {
-  if (!clientId) {
-    throw new Error("createAppointment: falta clientId");
-  }
-  if (!date || !(date instanceof Date) || isNaN(date.getTime())) {
-    throw new Error("createAppointment: fecha inválida");
-  }
-
-  console.log("🗓 [appointmentService] Creando cita en BD:", {
-    clientId,
-    date,
-  });
-
-  const horaTexto = date.toTimeString().slice(0, 5); // "16:00"
-  const fechaTexto = date.toISOString(); // ISO completa
-
-  // 👇 IMPORTANTE: aquí usamos SOLO campos que existen en tu modelo
-  const appointment = await prisma.appointment.create({
-    data: {
-      clientId,
-      status: "confirmed",
-      fecha: fechaTexto,
-      hora: horaTexto,
-      // duration y proposito los dejamos opcionales para más adelante
-    },
-  });
-
-  console.log("✅ [appointmentService] Cita creada:", appointment);
-
-  return appointment;
+function toHoraTexto(date) {
+  const hh = String(date.getHours()).padStart(2, "0");
+  const mm = String(date.getMinutes()).padStart(2, "0");
+  return `${hh}:${mm}`;
 }
 
 /**
- * Devuelve todas las citas de un cliente
+ * Normaliza y limpia un Date:
+ * - segundos = 0
+ * - milisegundos = 0
  */
-async function getAppointmentsByClient(clientId) {
-  if (!clientId) {
-    throw new Error("getAppointmentsByClient: falta clientId");
+function limpiarDate(d) {
+  if (!(d instanceof Date) || isNaN(d)) throw new Error("Fecha inválida (Date)");
+  const date = new Date(d.getTime());
+  date.setSeconds(0);
+  date.setMilliseconds(0);
+  return date;
+}
+
+function validarHora(hh, mm) {
+  if (!Number.isInteger(hh) || !Number.isInteger(mm)) return false;
+  if (hh < 0 || hh > 23) return false;
+  if (mm < 0 || mm > 59) return false;
+  return true;
+}
+
+/**
+ * Acepta:
+ * - Date  (ya con fecha+hora)
+ * - { fecha: "YYYY-MM-DD", hora: "HH:MM" }  -> lo convertimos a Date LOCAL
+ *
+ * Devuelve:
+ * - { date: Date, horaTexto: "HH:MM" }
+ */
+function normalizeAppointmentInput(input) {
+  // Caso 1: Date
+  if (input instanceof Date) {
+    const date = limpiarDate(input);
+    return { date, horaTexto: toHoraTexto(date) };
   }
 
-  const appointments = await prisma.appointment.findMany({
-    where: { clientId },
-    orderBy: { createdAt: "asc" },
-  });
+  // Caso 2: {fecha, hora}
+  if (
+    input &&
+    typeof input === "object" &&
+    typeof input.fecha === "string" &&
+    typeof input.hora === "string"
+  ) {
+    const fecha = input.fecha.trim();
+    const hora = input.hora.trim();
 
-  return appointments;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
+      throw new Error("Formato de fecha inválido. Esperado YYYY-MM-DD");
+    }
+    if (!/^\d{2}:\d{2}$/.test(hora)) {
+      throw new Error("Formato de hora inválido. Esperado HH:MM");
+    }
+
+    const [yyyy, mm, dd] = fecha.split("-").map((v) => parseInt(v, 10));
+    const [hh, min] = hora.split(":").map((v) => parseInt(v, 10));
+
+    if (!validarHora(hh, min)) {
+      throw new Error("Hora inválida. Rango válido: 00:00 a 23:59");
+    }
+
+    // Date LOCAL (evita problema UTC)
+    const date = new Date(yyyy, mm - 1, dd, hh, min, 0, 0);
+    if (isNaN(date)) throw new Error("No se pudo construir Date desde {fecha,hora}");
+
+    return { date: limpiarDate(date), horaTexto: hora };
+  }
+
+  throw new Error("Entrada inválida para cita (se esperaba Date o {fecha,hora})");
+}
+
+/**
+ * Crea una cita en la BD con tu modelo:
+ *   fecha: DateTime (real)
+ *   hora:  String "HH:MM" (mostrar)
+ *
+ * Anti-duplicados robusto:
+ * - busca existente por (clientId, fecha exacta)
+ * - si hay constraint @@unique([clientId, fecha]) y entra doble request, captura P2002
+ */
+async function createAppointment(clientId, dateOrParsed, proposito = null) {
+  if (!clientId) throw new Error("clientId requerido");
+
+  const { date, horaTexto } = normalizeAppointmentInput(dateOrParsed);
+
+  // 1) Intentar encontrar si ya existe
+  const existente = await prisma.appointment.findFirst({
+    where: { clientId, fecha: date },
+  });
+  if (existente) return existente;
+
+  // 2) Crear (y si hay carrera, manejar unique)
+  try {
+    const appointment = await prisma.appointment.create({
+      data: {
+        clientId,
+        fecha: date,       // DateTime real (local)
+        hora: horaTexto,   // string para mostrar
+        status: "confirmed",
+        proposito: proposito || null,
+      },
+    });
+
+    return appointment;
+  } catch (e) {
+    // Prisma: Unique constraint failed
+    if (e && e.code === "P2002") {
+      const ya = await prisma.appointment.findFirst({
+        where: { clientId, fecha: date },
+      });
+      if (ya) return ya;
+    }
+    throw e;
+  }
+}
+
+async function getAppointmentsByClient(clientId) {
+  if (!clientId) throw new Error("clientId requerido");
+
+  return prisma.appointment.findMany({
+    where: { clientId },
+    orderBy: [{ fecha: "asc" }],
+  });
 }
 
 module.exports = {
   createAppointment,
   getAppointmentsByClient,
+  normalizeAppointmentInput,
+  // helpers (por si luego haces tests)
+  limpiarDate,
+  toHoraTexto,
 };

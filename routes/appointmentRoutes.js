@@ -1,26 +1,22 @@
 // routes/appointmentRoutes.js
 
 const express = require("express");
-const {
-  createAppointment,
-  getAppointments,
-  updateAppointment,
-  deleteAppointment,
-} = require("../controllers/appointmentController");
-
 const router = express.Router();
 
-// Crear cita: POST /api/appointments
-router.post("/", createAppointment);
+const {
+  crearCita,
+  actualizarCita,
+  obtenerCitas,
+} = require("../controllers/appointmentController");
 
-// Listar citas: GET /api/appointments?clientId=...
-router.get("/", getAppointments);
+// POST /api/appointments → crear nueva cita
+router.post("/", crearCita);
 
-// Actualizar cita: PUT /api/appointments/:id
-router.put("/:id", updateAppointment);
+// PUT /api/appointments/:id → actualizar cita existente
+router.put("/:id", actualizarCita);
 
-// Eliminar cita: DELETE /api/appointments/:id
-router.delete("/:id", deleteAppointment);
+// GET /api/appointments?clientId=... → listar citas de un cliente
+router.get("/", obtenerCitas);
 
 module.exports = router;
 

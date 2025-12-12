@@ -1,11 +1,15 @@
-// routes/chatRoutes.js
-
 const express = require("express");
-const { chatcontroller } = require("../controllers/chatcontroller");
-
 const router = express.Router();
 
-// OJO: aquí solo va "/"
+const {
+  chatcontroller,
+  getChatHistoryController,
+} = require("../controllers/chatcontroller");
+
+// POST /api/chat
 router.post("/", chatcontroller);
+
+// GET /api/chat/history?clientId=...
+router.get("/history", getChatHistoryController);
 
 module.exports = router;

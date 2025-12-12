@@ -1,23 +1,41 @@
 // services/appointmentState.js
 
-// Estado simple en memoria por cliente
-const estadoCitas = new Map();
-// clientId => "esperando_fecha" | null
+// Mapa en memoria: clientId -> { appointmentId, fecha, hora }
+const awaitingPurposeByClientId = new Map();
 
-function setEstadoCita(clientId, estado) {
-  estadoCitas.set(clientId, estado);
+/**
+ * Marca que un clientId tiene una cita recién creada
+ * a la que hay que añadirle el "proposito" en el siguiente mensaje.
+ */
+function setAwaitingPurpose(clientId, data) {
+  if (!clientId || !data || !data.appointmentId) return;
+
+  awaitingPurposeByClientId.set(clientId, {
+    appointmentId: data.appointmentId,
+    fecha: data.fecha,
+    hora: data.hora,
+  });
+
+  console.log("⏳ [appointmentState] Esperando motivo para:", clientId, data);
 }
 
-function getEstadoCita(clientId) {
-  return estadoCitas.get(clientId) || null;
+/**
+ * Obtiene el estado de "esperando motivo"
+ */
+function getAwaitingPurpose(clientId) {
+  return awaitingPurposeByClientId.get(clientId) || null;
 }
 
-function limpiarEstadoCita(clientId) {
-  estadoCitas.delete(clientId);
+/**
+ * Limpia el estado de "esperando motivo"
+ */
+function clearAwaitingPurpose(clientId) {
+  awaitingPurposeByClientId.delete(clientId);
+  console.log("🧹 [appointmentState] Limpiado estado para:", clientId);
 }
 
 module.exports = {
-  setEstadoCita,
-  getEstadoCita,
-  limpiarEstadoCita,
+  setAwaitingPurpose,
+  getAwaitingPurpose,
+  clearAwaitingPurpose,
 };
