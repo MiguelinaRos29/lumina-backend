@@ -2,8 +2,7 @@
 const express = require("express");
 const router = express.Router();
 
-// ✅ IMPORT CORRECTO (porque el controller exporta un objeto { chatHandler })
-const { chatHandler } = require("../controllers/chatcontroller");
+const { chatHandler } = require("../controllers/chatController");
 
 // POST /api/chat
 router.post("/chat", chatHandler);
