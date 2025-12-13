@@ -1,12 +1,11 @@
+// routes/chatRoutes.js
 const express = require("express");
 const router = express.Router();
 
-const {
-  chatcontroller,
-  getChatHistoryController,
-} = require("../controllers/chatcontroller");
+// ✅ IMPORT CORRECTO (porque el controller exporta un objeto { chatHandler })
+const { chatHandler } = require("../controllers/chatcontroller");
 
-router.post("/", chatcontroller);
-router.get("/history", getChatHistoryController);
+// POST /api/chat
+router.post("/chat", chatHandler);
 
 module.exports = router;
