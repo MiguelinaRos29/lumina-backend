@@ -1,118 +1,148 @@
-// controllers/chatcontroller.js
-const { PrismaClient } = require("@prisma/client");
-const prisma = new PrismaClient();
+// controllers/chatController.js
 
+const { parseFechaDesdeMensaje, extraerProposito } = require("../services/dateParser");
 const { createAppointment } = require("../services/appointmentService");
-const { parseFechaDesdeMensaje } = require("../services/dateParser");
-const { detectarIntencion } = require("../services/intentDetection");
-const { obtenerRespuestaLumina } = require("../services/luminaAI");
 
+// Estado por cliente (memoria RAM). Para MVP perfecto.
+// Más adelante lo pasamos a BD/Redis.
+const stateByClient = new Map();
 /**
- * Formatea un DateTime a "YYYY-MM-DD" en local.
+ * state = {
+ *   step: "idle" | "awaitingPurpose" | "awaitingConfirm",
+ *   pendingDate: Date|null,
+ *   pendingPurpose: string|null
+ * }
  */
-function dateToFechaStr(d) {
+
+function getState(clientId) {
+  if (!stateByClient.has(clientId)) {
+    stateByClient.set(clientId, { step: "idle", pendingDate: null, pendingPurpose: null });
+  }
+  return stateByClient.get(clientId);
+}
+
+function resetState(clientId) {
+  stateByClient.set(clientId, { step: "idle", pendingDate: null, pendingPurpose: null });
+}
+
+function isYes(text) {
+  const t = (text || "").toLowerCase().trim();
+  return ["si", "sí", "confirmo", "confirmar", "vale", "ok", "de acuerdo", "perfecto"].includes(t);
+}
+function isNo(text) {
+  const t = (text || "").toLowerCase().trim();
+  return ["no", "cancelar", "anular", "mejor no", "cambia", "cambiar", "otro dia", "otra hora"].includes(t);
+}
+
+function fmtDateLocal(d) {
   const yyyy = d.getFullYear();
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mi = String(d.getMinutes()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}, ${hh}:${mi}`;
 }
 
-async function asegurarCliente(clientId) {
-  const existe = await prisma.client.findUnique({ where: { id: clientId } });
-  if (existe) return existe;
-
-  return prisma.client.create({
-    data: {
-      id: clientId,
-      name: "Cliente",
-      api_key: `temp_${clientId}`, // unique
-    },
-  });
+// Heurística simple: detectar intención de cita
+function isAppointmentIntent(text) {
+  const t = (text || "").toLowerCase();
+  return t.includes("cita") || t.includes("reserv") || t.includes("reunion") || t.includes("reunión");
 }
 
-async function guardarMensaje(clientId, role, content) {
-  await asegurarCliente(clientId);
-  return prisma.message.create({
-    data: { client_id: clientId, role, content },
-  });
+// ⚠️ Aquí tú llamas a tu LLM/Groq. Yo dejo stub para que lo conectes donde ya lo tienes.
+async function askLLM({ clientId, message, mode }) {
+  // TODO: integra tu Groq/Llama como ya lo tienes en tu proyecto.
+  // Debe devolver string.
+  return "Ok.";
 }
 
-/**
- * POST /api/chat
- * body: { clientId, message, mode? }
- */
-async function chatcontroller(req, res) {
+async function chatHandler(req, res) {
   try {
-    const { clientId, message, mode = null } = req.body;
-
-    if (!clientId) return res.status(400).json({ error: "clientId requerido" });
-    if (!message || typeof message !== "string") {
-      return res.status(400).json({ error: "message requerido" });
+    const { clientId, message, mode = "general" } = req.body || {};
+    if (!clientId || !message) {
+      return res.status(400).json({ error: "clientId y message son requeridos" });
     }
 
-    await guardarMensaje(clientId, "user", message);
+    const state = getState(clientId);
+    const msg = String(message);
 
-    const intencion = detectarIntencion(message);
+    // =========================
+    // 1) Si está esperando MOTIVO
+    // =========================
+    if (state.step === "awaitingPurpose") {
+      const proposito = msg.trim();
+      state.pendingPurpose = proposito.slice(0, 140);
+      state.step = "awaitingConfirm";
 
-    // ---- Citas ----
-    if (intencion === "CREAR_CITA") {
-      const parsedDate = parseFechaDesdeMensaje(message);
+      const texto = `Perfecto. Tengo la cita para **${fmtDateLocal(state.pendingDate)}**.\nMotivo: **${state.pendingPurpose}**.\n\n¿Confirmas la cita? (Sí/No)`;
+      return res.json({ reply: texto });
+    }
 
-      if (!parsedDate) {
-        const reply = "Entendido. ¿Para qué día y a qué hora quieres la cita?";
-        await guardarMensaje(clientId, "assistant", reply);
-        return res.json({ reply });
+    // =========================
+    // 2) Si está esperando CONFIRMACIÓN
+    // =========================
+    if (state.step === "awaitingConfirm") {
+      if (isYes(msg)) {
+        const created = await createAppointment(clientId, state.pendingDate, state.pendingPurpose);
+        const texto = `✅ Cita confirmada para **${fmtDateLocal(state.pendingDate)}**.${state.pendingPurpose ? `\nMotivo: **${state.pendingPurpose}**.` : ""}`;
+        resetState(clientId);
+        return res.json({ reply: texto, appointment: created });
       }
 
-      parsedDate.setSeconds(0);
-      parsedDate.setMilliseconds(0);
+      if (isNo(msg)) {
+        // cancelamos flujo y pedimos nueva fecha/hora
+        const texto = "De acuerdo. Dime **otra fecha y hora** para la cita (por ejemplo: “mañana a las 18”).";
+        resetState(clientId);
+        return res.json({ reply: texto });
+      }
 
-      // createAppointment ya evita duplicados por @@unique([clientId, fecha])
-      const appointment = await createAppointment(clientId, parsedDate, null);
-
-      const fechaStr = dateToFechaStr(appointment.fecha);
-      const reply = `Perfecto. He registrado tu cita para el ${fechaStr}, ${appointment.hora}.`;
-
-      await guardarMensaje(clientId, "assistant", reply);
-      return res.json({ reply, appointment });
+      return res.json({ reply: "¿Confirmas la cita? Responde **Sí** o **No**." });
     }
 
-    // ---- IA normal (si no es cita) ----
-    const reply = await obtenerRespuestaLumina(clientId, message, mode);
-    await guardarMensaje(clientId, "assistant", reply);
+    // =========================
+    // 3) Flujo normal: detectar cita
+    // =========================
+    if (isAppointmentIntent(msg)) {
+      const dt = parseFechaDesdeMensaje(msg);
+      if (!dt) {
+        return res.json({
+          reply:
+            "Entendido. Dime **fecha y hora** para la cita (ej: “mañana a las 19”, “el día 16 a las 14”).",
+        });
+      }
 
-    return res.json({ reply });
+      // Guardamos fecha en estado
+      state.pendingDate = dt;
+
+      // Motivo si viene en el mismo mensaje
+      const proposito = extraerProposito(msg);
+      if (proposito) {
+        state.pendingPurpose = proposito;
+        state.step = "awaitingConfirm";
+        return res.json({
+          reply: `He detectado una cita para **${fmtDateLocal(dt)}**.\nMotivo: **${proposito}**.\n\n¿Confirmas la cita? (Sí/No)`,
+        });
+      }
+
+      // Si no hay motivo, lo pedimos (viable y simple)
+      state.pendingPurpose = null;
+      state.step = "awaitingPurpose";
+      return res.json({
+        reply: `He detectado una cita para **${fmtDateLocal(dt)}**.\n\n¿Para qué es la cita? (motivo breve)`,
+      });
+    }
+
+    // =========================
+    // 4) No es cita: respuesta IA normal (SIN SALUDO LARGO)
+    // =========================
+    const llmText = await askLLM({ clientId, message: msg, mode });
+    // Opción A: no “me alegra conocerte…”; directo y útil
+    return res.json({ reply: llmText });
+
   } catch (err) {
-    console.error("❌ Error en chatcontroller:", err);
-    return res.status(500).json({
-      error: "Error interno del servidor",
-      details: err.message || String(err),
-    });
+    console.error("chatHandler error:", err);
+    return res.status(500).json({ error: "Error interno" });
   }
 }
 
-/**
- * GET /api/chat/history?clientId=...
- */
-async function getChatHistoryController(req, res) {
-  try {
-    const { clientId } = req.query;
-    if (!clientId) return res.status(400).json({ error: "clientId requerido" });
-
-    const messages = await prisma.message.findMany({
-      where: { client_id: clientId },
-      orderBy: { created_at: "asc" },
-      select: { id: true, role: true, content: true, created_at: true },
-    });
-
-    return res.json({ messages });
-  } catch (err) {
-    console.error("❌ Error en getChatHistoryController:", err);
-    return res.status(500).json({
-      error: "Error interno del servidor",
-      details: err.message || String(err),
-    });
-  }
-}
-
-module.exports = { chatcontroller, getChatHistoryController };
+module.exports = { chatHandler };
