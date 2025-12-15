@@ -43,6 +43,22 @@ function fmtDateLocal(d) {
   return `${yyyy}-${mm}-${dd}, ${hh}:${mi}`;
 }
 
+// ✅ Ventas suaves SOLO si el motivo indica intención comercial
+function isVentaSoft(text) {
+  const t = (text || "").toLowerCase();
+  return [
+    "curso",
+    "asesoría",
+    "asesoria",
+    "información",
+    "informacion",
+    "consultoría",
+    "consultoria",
+    "precio",
+    "servicio",
+  ].some((k) => t.includes(k));
+}
+
 // Heurística simple: detectar intención de cita
 function isAppointmentIntent(text) {
   const t = (text || "").toLowerCase();
@@ -86,9 +102,15 @@ async function chatHandler(req, res) {
         try {
           const created = await createAppointment(clientId, state.pendingDate, state.pendingPurpose);
 
-          const texto =
+          let texto =
             `✅ Cita confirmada para **${fmtDateLocal(state.pendingDate)}**.` +
             (state.pendingPurpose ? `\nMotivo: **${state.pendingPurpose}**.` : "");
+
+          // ✅ Añadimos ventas suaves SOLO cuando el motivo es comercial
+          if (isVentaSoft(state.pendingPurpose)) {
+            texto +=
+              `\n\nPerfecto 😊 En esa cita revisaremos tu caso con calma y te explicaré las opciones que mejor encajen contigo.`;
+          }
 
           resetState(clientId);
           return res.json({ reply: texto, appointment: created });
@@ -169,5 +191,3 @@ async function chatHandler(req, res) {
 }
 
 module.exports = { chatHandler };
-
-
