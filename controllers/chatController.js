@@ -94,11 +94,7 @@ async function chatHandler(req, res) {
           return res.json({ reply: texto, appointment: created });
 
         } catch (err) {
-          console.error("createAppointment error:", err);
-
           // ✅ Duplicado (Prisma)
-          // Nota: si todavía tienes unique (clientId, fecha) o (clientId, fecha, hora),
-          // esto evita que el chat reviente y evita “Error al enviar…” en el móvil.
           if (err?.code === "P2002") {
             resetState(clientId);
             return res.json({
@@ -108,10 +104,9 @@ async function chatHandler(req, res) {
             });
           }
 
-          // ✅ Para depurar: devolvemos details en el 500 (luego lo quitamos)
+          // ✅ Respuesta limpia sin detalles
           return res.status(500).json({
             error: "Error interno",
-            details: err?.message || String(err),
           });
         }
       }
@@ -166,15 +161,13 @@ async function chatHandler(req, res) {
     return res.json({ reply: llmText });
 
   } catch (err) {
-    console.error("chatHandler error:", err);
-
-    // ✅ Para depurar: devolvemos details en el 500 (luego lo quitamos)
+    // ✅ Respuesta limpia sin detalles
     return res.status(500).json({
       error: "Error interno",
-      details: err?.message || String(err),
     });
   }
 }
 
 module.exports = { chatHandler };
+
 
