@@ -1,43 +1,47 @@
 // services/appointmentService.js
-
 const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
 
 /**
- * Convierte Date -> "HH:MM" (hora local del servidor)
- */
-function toHoraTexto(date) {
-  const hh = String(date.getHours()).padStart(2, "0");
-  const mm = String(date.getMinutes()).padStart(2, "0");
-  return `${hh}:${mm}`;
-}
-
-/**
- * Crea una cita en la BD
+ * Crea una cita en la base de datos.
  * @param {string} clientId
- * @param {Date} fecha  DateTime real (con hora)
+ * @param {Date} date
  * @param {string|null} proposito
  */
-async function createAppointment(clientId, fecha, proposito = null) {
-  if (!clientId) throw new Error("clientId requerido en createAppointment");
+async function createAppointment(clientId, date, proposito = null) {
+  if (!clientId) throw new Error("clientId requerido");
 
-  if (!(fecha instanceof Date) || isNaN(fecha.getTime())) {
+  if (!(date instanceof Date) || isNaN(date)) {
     throw new Error("Fecha inválida en createAppointment");
   }
 
-  const hora = toHoraTexto(fecha);
+  // ✅ Guardado estable (evita líos de zona horaria)
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  const fecha = `${yyyy}-${mm}-${dd}`;
 
-  const appointment = await prisma.appointment.create({
+  const hh = String(date.getHours()).padStart(2, "0");
+  const mi = String(date.getMinutes()).padStart(2, "0");
+  const hora = `${hh}:${mi}`;
+
+  const cleanPurpose =
+    typeof proposito === "string" && proposito.trim().length > 0
+      ? proposito.trim().slice(0, 140)
+      : null;
+
+  // ✅ Si tu prisma tiene proposito como String? (opcional), esto funciona perfecto
+  const created = await prisma.appointment.create({
     data: {
       clientId,
       fecha,
-      hora, // ✅ SIEMPRE presente (evita 'Argument hora is missing')
+      hora,
       status: "confirmed",
-      proposito: proposito ?? null,
+      proposito: cleanPurpose,
     },
   });
 
-  return appointment;
+  return created;
 }
 
 module.exports = { createAppointment };

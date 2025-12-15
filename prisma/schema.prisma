@@ -27,18 +27,17 @@ model Message {
 }
 
 model Appointment {
-  id         String   @id @default(cuid())
-  clientId   String
-  fecha      DateTime // fecha + hora reales
-  hora       String   // "HH:MM" para mostrar
-  status     String   @default("confirmed")
-  proposito  String?
-  createdAt  DateTime @default(now())
+  id        String   @id @default(cuid())
+  clientId  String
+  fecha     String   // "2025-12-16"
+  hora      String   // "20:00"
+  status    String   @default("confirmed")
+  proposito String?
+  createdAt DateTime @default(now())
 
-  @@unique([clientId, fecha])
-  @@index([clientId])
-  @@index([fecha])
+  @@unique([clientId, fecha, hora])
 }
+
 
 
 
