@@ -83,10 +83,37 @@ async function chatHandler(req, res) {
     // =========================
     if (state.step === "awaitingConfirm") {
       if (isYes(msg)) {
-        const created = await createAppointment(clientId, state.pendingDate, state.pendingPurpose);
-        const texto = `✅ Cita confirmada para **${fmtDateLocal(state.pendingDate)}**.${state.pendingPurpose ? `\nMotivo: **${state.pendingPurpose}**.` : ""}`;
-        resetState(clientId);
-        return res.json({ reply: texto, appointment: created });
+        try {
+          const created = await createAppointment(clientId, state.pendingDate, state.pendingPurpose);
+
+          const texto =
+            `✅ Cita confirmada para **${fmtDateLocal(state.pendingDate)}**.` +
+            (state.pendingPurpose ? `\nMotivo: **${state.pendingPurpose}**.` : "");
+
+          resetState(clientId);
+          return res.json({ reply: texto, appointment: created });
+
+        } catch (err) {
+          console.error("createAppointment error:", err);
+
+          // ✅ Duplicado (Prisma)
+          // Nota: si todavía tienes unique (clientId, fecha) o (clientId, fecha, hora),
+          // esto evita que el chat reviente y evita “Error al enviar…” en el móvil.
+          if (err?.code === "P2002") {
+            resetState(clientId);
+            return res.json({
+              reply:
+                "⚠️ Parece que esa cita ya estaba registrada para esa fecha y hora.\n" +
+                "Dime **otra hora** para la cita (ej: “mañana a las 21”).",
+            });
+          }
+
+          // ✅ Para depurar: devolvemos details en el 500 (luego lo quitamos)
+          return res.status(500).json({
+            error: "Error interno",
+            details: err?.message || String(err),
+          });
+        }
       }
 
       if (isNo(msg)) {
@@ -136,13 +163,18 @@ async function chatHandler(req, res) {
     // 4) No es cita: respuesta IA normal (SIN SALUDO LARGO)
     // =========================
     const llmText = await askLLM({ clientId, message: msg, mode });
-    // Opción A: no “me alegra conocerte…”; directo y útil
     return res.json({ reply: llmText });
 
   } catch (err) {
     console.error("chatHandler error:", err);
-    return res.status(500).json({ error: "Error interno" });
+
+    // ✅ Para depurar: devolvemos details en el 500 (luego lo quitamos)
+    return res.status(500).json({
+      error: "Error interno",
+      details: err?.message || String(err),
+    });
   }
 }
 
 module.exports = { chatHandler };
+
