@@ -8,7 +8,7 @@ const { createAppointment } = require("../services/appointmentService");
 const stateByClient = new Map();
 /**
  * state = {
- *   step: "idle" | "awaitingPurpose" | "awaitingConfirm",
+ *   step: "idle" | "awaitingPurpose" | "awaitingConfirm" | "awaitingNewTime",
  *   pendingDate: Date|null,
  *   pendingPurpose: string|null
  * }
@@ -83,6 +83,29 @@ async function chatHandler(req, res) {
     const msg = String(message);
 
     // =========================
+    // 0) Si está esperando NUEVA HORA tras duplicado
+    // =========================
+    if (state.step === "awaitingNewTime") {
+      const dt = parseFechaDesdeMensaje(msg);
+
+      if (!dt) {
+        return res.json({
+          reply: "Dime **otra hora** para la cita (ej: “mañana a las 21”).",
+        });
+      }
+
+      state.pendingDate = dt;
+      state.step = "awaitingConfirm";
+
+      const texto =
+        `Perfecto. Nueva cita detectada para **${fmtDateLocal(dt)}**.` +
+        (state.pendingPurpose ? `\nMotivo: **${state.pendingPurpose}**.` : "") +
+        `\n\n¿Confirmas la cita? (Sí/No)`;
+
+      return res.json({ reply: texto });
+    }
+
+    // =========================
     // 1) Si está esperando MOTIVO
     // =========================
     if (state.step === "awaitingPurpose") {
@@ -118,7 +141,8 @@ async function chatHandler(req, res) {
         } catch (err) {
           // ✅ Duplicado (Prisma)
           if (err?.code === "P2002") {
-            resetState(clientId);
+            // 👇 NO reseteamos, mantenemos el motivo y pedimos nueva hora
+            state.step = "awaitingNewTime";
             return res.json({
               reply:
                 "⚠️ Parece que esa cita ya estaba registrada para esa fecha y hora.\n" +
