@@ -29,8 +29,8 @@ model Message {
 model Appointment {
   id        String   @id @default(cuid())
   clientId  String
-  fecha     String   // "2025-12-16"
-  hora      String   // "20:00"
+  fecha     String   // "YYYY-MM-DD"
+  hora      String   // "HH:MM"
   status    String   @default("confirmed")
   proposito String?
   createdAt DateTime @default(now())
