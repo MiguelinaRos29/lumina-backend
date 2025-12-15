@@ -153,23 +153,35 @@ function parseFechaDesdeMensaje(message) {
 }
 
 /**
- * Extrae propósito simple: "por X", "para X", "sobre X"
+ * Extrae propósito premium:
+ * - SOLO si viene con palabra gancho: por / para / porque / motivo: / sobre / acerca de
+ * - Evita capturar basura tipo "mañana a las 20"
  */
 function extraerProposito(message) {
   const texto = normalizarTexto(String(message || ""));
 
-  // Cortamos en 140 para evitar tocho
+  // ✅ Solo consideramos propósito si aparece un “gancho”
   const m =
-    texto.match(/\bpor\s+(.{2,140})$/) ||
-    texto.match(/\bpara\s+(.{2,140})$/) ||
-    texto.match(/\bsobre\s+(.{2,140})$/);
+    texto.match(/\b(?:por|para|porque|motivo)\b\s*[:\-]?\s*(.+)$/) ||
+    texto.match(/\b(?:sobre|acerca de)\b\s*(.+)$/);
 
   if (!m) return null;
 
-  const p = m[1].trim();
+  let p = String(m[1] || "").trim();
+  if (!p) return null;
 
-  // Evitar capturar basura tipo "a las 19"
-  if (p.length < 2) return null;
+  // ✅ Limpieza: quitar restos de expresiones de tiempo si se cuelan
+  p = p
+    .replace(/\b(hoy|manana|mañana|pasado manana|pasado mañana|pasadomanana)\b/g, "")
+    .replace(/\b(a las|a la)\b/g, "")
+    .replace(/\b(\d{1,2})[:\.](\d{2})\b/g, "")
+    .replace(/\b(\d{1,2})\b/g, "")
+    .replace(/[,\.\-:]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!p || p.length < 2) return null;
+
   return p.slice(0, 140);
 }
 
