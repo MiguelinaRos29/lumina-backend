@@ -4,8 +4,7 @@ const cors = require("cors");
 
 const chatRoutes = require("./routes/chatRoutes");
 const appointmentRoutes = require("./routes/appointmentRoutes");
-const metricsRoutes = require("./routes/metricsRoutes");
-const gaTestRoutes = require("./routes/gaTest");
+const gaTestRoutes = require("./routes/gaTest"); // ✅ AÑADIR
 
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -17,15 +16,15 @@ app.get("/", (req, res) => {
   res.send("Lumina backend (MyClarix) está corriendo correctamente 🚀");
 });
 
-// Rutas existentes
 app.use("/api/chat", chatRoutes);
 app.use("/api/appointments", appointmentRoutes);
+
+const metricsRoutes = require("./routes/metricsRoutes");
 app.use("/api/metrics", metricsRoutes);
 
-// ✅ Ruta de prueba GA4 (IMPORTANTE)
+// ✅ AQUÍ VA (esto crea /api/ga-test)
 app.use("/api", gaTestRoutes);
 
 app.listen(PORT, () => {
   console.log(`🚀 Servidor Lumina escuchando en el puerto ${PORT}`);
 });
-
