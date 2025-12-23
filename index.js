@@ -4,7 +4,8 @@ const cors = require("cors");
 
 const chatRoutes = require("./routes/chatRoutes");
 const appointmentRoutes = require("./routes/appointmentRoutes");
-const gaTestRoutes = require("./routes/gaTest"); // ✅ AÑADIR
+const metricsRoutes = require("./routes/metricsRoutes");
+const gaTestRoutes = require("./routes/gaTest");
 
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -18,11 +19,9 @@ app.get("/", (req, res) => {
 
 app.use("/api/chat", chatRoutes);
 app.use("/api/appointments", appointmentRoutes);
-
-const metricsRoutes = require("./routes/metricsRoutes");
 app.use("/api/metrics", metricsRoutes);
 
-// ✅ AQUÍ VA (esto crea /api/ga-test)
+// ✅ ruta de prueba GA4
 app.use("/api", gaTestRoutes);
 
 app.listen(PORT, () => {

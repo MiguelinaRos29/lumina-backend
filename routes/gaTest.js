@@ -1,4 +1,3 @@
-// routes/gaTest.js
 const express = require("express");
 const router = express.Router();
 const { sendGAEvent } = require("../utils/ga4");
@@ -14,5 +13,6 @@ router.get("/ga-test", async (req, res) => {
 });
 
 module.exports = router;
+
 
 

@@ -10,7 +10,6 @@ function gaClientIdFromClientId(clientId) {
 
   const a = parseInt(hex.slice(0, 8), 16);
   const b = parseInt(hex.slice(8, 16), 16);
-
   return `${a}.${b}`;
 }
 
@@ -18,19 +17,11 @@ function boolEnv(name) {
   return String(process.env[name] || "").toLowerCase() === "true";
 }
 
-/**
- * sendGAEvent(req, name, params)
- * Env vars (Render):
- * - GA4_MEASUREMENT_ID
- * - GA4_API_SECRET
- * Opcional:
- * - GA4_DEBUG=true
- */
 async function sendGAEvent(req, name, params = {}) {
   try {
     const MEASUREMENT_ID = process.env.GA4_MEASUREMENT_ID;
     const API_SECRET = process.env.GA4_API_SECRET;
-    if (!MEASUREMENT_ID || !API_SECRET) return { skipped: true, reason: "missing_env" };
+    if (!MEASUREMENT_ID || !API_SECRET) return null;
 
     const useDebug = boolEnv("GA4_DEBUG");
     const endpoint = useDebug
@@ -67,15 +58,15 @@ async function sendGAEvent(req, name, params = {}) {
       body: JSON.stringify(payload),
     });
 
-    // En debug endpoint podemos leer validación
     if (useDebug) {
-      const json = await res.json().catch(() => null);
-      return { ok: res.ok, debug: json };
+      // debug endpoint devuelve JSON con validationMessages
+      const data = await res.json().catch(() => null);
+      return { ok: res.ok, debug: data };
     }
 
     return { ok: res.ok };
   } catch (e) {
-    return { ok: false, error: String(e?.message || e) };
+    return null;
   }
 }
 
