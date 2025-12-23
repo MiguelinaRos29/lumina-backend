@@ -30,7 +30,6 @@ async function createAppointment(clientId, date, proposito = null) {
       ? proposito.trim().slice(0, 140)
       : null;
 
-  // ✅ Si tu prisma tiene proposito como String? (opcional), esto funciona perfecto
   const created = await prisma.appointment.create({
     data: {
       clientId,

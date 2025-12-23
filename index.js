@@ -4,6 +4,8 @@ const cors = require("cors");
 
 const chatRoutes = require("./routes/chatRoutes");
 const appointmentRoutes = require("./routes/appointmentRoutes");
+const metricsRoutes = require("./routes/metricsRoutes");
+const gaTestRoutes = require("./routes/gaTest"); // 👈 AÑADIR ESTO
 
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -17,9 +19,9 @@ app.get("/", (req, res) => {
 
 app.use("/api/chat", chatRoutes);
 app.use("/api/appointments", appointmentRoutes);
+app.use("/api/metrics", metricsRoutes);
+app.use("/api", gaTestRoutes); // 👈 Y ESTO
 
 app.listen(PORT, () => {
   console.log(`🚀 Servidor Lumina escuchando en el puerto ${PORT}`);
 });
-
-
