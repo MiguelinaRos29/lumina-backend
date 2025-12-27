@@ -5,36 +5,40 @@ const cors = require("cors");
 
 const { clientContext } = require("./clientContext.js");
 const chatRoutes = require("./routes/chatRoutes.js");
-const whatsappRoutes = require("./routes/whatsappRoutes.js"); // ✅ NUEVO
 
 const app = express();
 
+// Render / proxies
+app.set("trust proxy", 1);
+
 // ----------------------
-// 🟣 CORS (solo afecta navegador, Meta webhook no usa CORS)
+// 🟣 CORS (usa CORS_ORIGIN si existe, si no permite todo)
 // ----------------------
+const corsOrigin = process.env.CORS_ORIGIN || "*";
+
 app.use(
   cors({
-    origin: "*",
-    methods: ["GET", "POST", "PUT", "DELETE"],
+    origin: corsOrigin === "*" ? "*" : corsOrigin.split(",").map(s => s.trim()),
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "x-client-id", "x-company-id"],
   })
 );
 
-// ✅ Para webhooks + app
 app.use(express.json());
-
 app.use(clientContext);
 
 app.use(express.static(path.join(__dirname, "public")));
 
-// ✅ Salud (útil para comprobar rápido en Render)
-app.get("/health", (req, res) => res.json({ ok: true }));
+// ✅ HEALTH CHECKS
+app.get("/health", (req, res) => {
+  return res.status(200).json({ ok: true, service: "myclarix-backend", ts: Date.now() });
+});
+app.get("/api/health", (req, res) => {
+  return res.status(200).json({ ok: true, service: "myclarix-api", ts: Date.now() });
+});
 
-// ✅ Chat API (como lo tenías)
+// Rutas
 app.use("/api", chatRoutes);
-
-// ✅ WhatsApp webhook
-app.use("/webhook", whatsappRoutes);
 
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "chat.html"));
@@ -45,3 +49,4 @@ const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {
   console.log(`Servidor Lumina escuchando en el puerto ${PORT}`);
 });
+

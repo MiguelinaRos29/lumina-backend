@@ -3,13 +3,14 @@ const router = express.Router();
 
 const { chatHandler } = require("../controllers/chatController");
 
-// ✅ GET /api/chat/history  (MVP: devuelve vacío para que no falle la app)
+// GET /api/chat/history
 router.get("/history", (req, res) => {
   return res.json({ messages: [] });
 });
 
-// ✅ POST /api/chat
+// POST /api/chat
 router.post("/", chatHandler);
 
 module.exports = router;
+
 

@@ -8,7 +8,6 @@ const { createAppointment } = require("../services/appointmentService");
 const { sendGAEvent } = require("../utils/ga4");
 
 // Estado por cliente (memoria RAM). Para MVP perfecto.
-// Más adelante lo pasamos a BD/Redis.
 const stateByClient = new Map();
 /**
  * state = {
@@ -62,7 +61,7 @@ function dateToYMDHM(d) {
   return { ymd, hm };
 }
 
-// ========== Ventas suaves SOLO si el motivo indica intención comercial ==========
+// Ventas suaves SOLO si el motivo indica intención comercial
 function isVentaSoft(text) {
   const t = (text || "").toLowerCase();
   return [
@@ -89,60 +88,48 @@ async function askLLM({ clientId, message, mode }) {
   return "Ok.";
 }
 
-async function chatHandler(req, res) {
-  try {
-    const { clientId, message, mode = "general" } = req.body || {};
-    if (!clientId || !message) {
-      return res.status(400).json({ error: "clientId y message son requeridos" });
+/**
+ * ✅ Función reutilizable:
+ * Sirve tanto para POST /api (app/web) como para WhatsApp webhook
+ */
+async function handleIncomingMessage({ req, clientId, message, mode = "general" }) {
+  const state = getState(clientId);
+  const msg = String(message);
+
+  // 0) Esperando NUEVA HORA
+  if (state.step === "awaitingNewTime") {
+    const dt = parseFechaDesdeMensaje(msg);
+    if (!dt) {
+      return "Dime **otra hora** para la cita (ej: “mañana a las 21”).";
     }
 
-    const state = getState(clientId);
-    const msg = String(message);
+    state.pendingDate = dt;
+    state.step = "awaitingConfirm";
 
-    // =========================
-    // 0) Esperando NUEVA HORA
-    // =========================
-    if (state.step === "awaitingNewTime") {
-      const dt = parseFechaDesdeMensaje(msg);
+    return (
+      `Perfecto. Nueva cita detectada para **${fmtDateLocal(dt)}**.` +
+      (state.pendingPurpose ? `\nMotivo: **${state.pendingPurpose}**.` : "") +
+      `\n\n¿Confirmas la cita? (Sí/No)`
+    );
+  }
 
-      if (!dt) {
-        return res.json({
-          reply: "Dime **otra hora** para la cita (ej: “mañana a las 21”).",
-        });
-      }
+  // 1) Esperando MOTIVO
+  if (state.step === "awaitingPurpose") {
+    const proposito = msg.trim();
+    state.pendingPurpose = proposito.slice(0, 140);
+    state.step = "awaitingConfirm";
 
-      state.pendingDate = dt;
-      state.step = "awaitingConfirm";
+    return `Perfecto. Tengo la cita para **${fmtDateLocal(state.pendingDate)}**.\nMotivo: **${state.pendingPurpose}**.\n\n¿Confirmas la cita? (Sí/No)`;
+  }
 
-      const texto =
-        `Perfecto. Nueva cita detectada para **${fmtDateLocal(dt)}**.` +
-        (state.pendingPurpose ? `\nMotivo: **${state.pendingPurpose}**.` : "") +
-        `\n\n¿Confirmas la cita? (Sí/No)`;
+  // 2) Esperando CONFIRMACIÓN
+  if (state.step === "awaitingConfirm") {
+    if (isYes(msg)) {
+      try {
+        const created = await createAppointment(clientId, state.pendingDate, state.pendingPurpose);
 
-      return res.json({ reply: texto });
-    }
-
-    // =========================
-    // 1) Esperando MOTIVO
-    // =========================
-    if (state.step === "awaitingPurpose") {
-      const proposito = msg.trim();
-      state.pendingPurpose = proposito.slice(0, 140);
-      state.step = "awaitingConfirm";
-
-      const texto = `Perfecto. Tengo la cita para **${fmtDateLocal(state.pendingDate)}**.\nMotivo: **${state.pendingPurpose}**.\n\n¿Confirmas la cita? (Sí/No)`;
-      return res.json({ reply: texto });
-    }
-
-    // =========================
-    // 2) Esperando CONFIRMACIÓN
-    // =========================
-    if (state.step === "awaitingConfirm") {
-      if (isYes(msg)) {
-        try {
-          const created = await createAppointment(clientId, state.pendingDate, state.pendingPurpose);
-
-          const { ymd, hm } = dateToYMDHM(state.pendingDate);
+        const { ymd, hm } = dateToYMDHM(state.pendingDate);
+        if (req) {
           await sendGAEvent(req, "appointment_confirmed", {
             mode: String(mode || "general"),
             date: ymd || undefined,
@@ -150,96 +137,99 @@ async function chatHandler(req, res) {
             has_purpose: !!state.pendingPurpose,
             venta_soft: isVentaSoft(state.pendingPurpose || ""),
           });
+        }
 
-          let texto =
-            `✅ Cita confirmada para **${fmtDateLocal(state.pendingDate)}**.` +
-            (state.pendingPurpose ? `\nMotivo: **${state.pendingPurpose}**.` : "");
+        let texto =
+          `✅ Cita confirmada para **${fmtDateLocal(state.pendingDate)}**.` +
+          (state.pendingPurpose ? `\nMotivo: **${state.pendingPurpose}**.` : "");
 
-          if (isVentaSoft(state.pendingPurpose)) {
-            texto += `\n\nPerfecto 😊 En esa cita revisaremos tu caso con calma y te explicaré las opciones que mejor encajen contigo.`;
-          }
+        if (isVentaSoft(state.pendingPurpose)) {
+          texto += `\n\nPerfecto 😊 En esa cita revisaremos tu caso con calma y te explicaré las opciones que mejor encajen contigo.`;
+        }
 
-          resetState(clientId);
-          return res.json({ reply: texto, appointment: created });
-        } catch (err) {
-          // ✅ Duplicado (Prisma)
-          if (err?.code === "P2002") {
-            const { ymd, hm } = dateToYMDHM(state.pendingDate);
+        resetState(clientId);
+        return texto;
+      } catch (err) {
+        if (err?.code === "P2002") {
+          const { ymd, hm } = dateToYMDHM(state.pendingDate);
+          if (req) {
             await sendGAEvent(req, "appointment_duplicate_retry", {
               mode: String(mode || "general"),
               date: ymd || undefined,
               time: hm || undefined,
             });
-
-            state.step = "awaitingNewTime";
-            return res.json({
-              reply:
-                "⚠️ Parece que esa cita ya estaba registrada para esa fecha y hora.\n" +
-                "Dime **otra hora** para la cita (ej: “mañana a las 21”).",
-            });
           }
 
-          return res.status(500).json({ error: "Error interno" });
+          state.step = "awaitingNewTime";
+          return (
+            "⚠️ Parece que esa cita ya estaba registrada para esa fecha y hora.\n" +
+            "Dime **otra hora** para la cita (ej: “mañana a las 21”)."
+          );
         }
-      }
 
-      if (isNo(msg)) {
+        return "⚠️ Hubo un error interno creando la cita. ¿Me repites la fecha y hora, por favor?";
+      }
+    }
+
+    if (isNo(msg)) {
+      if (req) {
         await sendGAEvent(req, "appointment_flow_cancelled", {
           mode: String(mode || "general"),
           step: "awaitingConfirm",
         });
-
-        const texto = "De acuerdo. Dime **otra fecha y hora** para la cita (por ejemplo: “mañana a las 18”).";
-        resetState(clientId);
-        return res.json({ reply: texto });
       }
 
-      return res.json({ reply: "¿Confirmas la cita? Responde **Sí** o **No**." });
+      resetState(clientId);
+      return "De acuerdo. Dime **otra fecha y hora** para la cita (por ejemplo: “mañana a las 18”).";
     }
 
-    // =========================
-    // 3) Flujo normal: detectar cita
-    // =========================
-    if (isAppointmentIntent(msg)) {
+    return "¿Confirmas la cita? Responde **Sí** o **No**.";
+  }
+
+  // 3) Flujo normal: detectar cita
+  if (isAppointmentIntent(msg)) {
+    if (req) {
       await sendGAEvent(req, "appointment_flow_started", {
         mode: String(mode || "general"),
       });
-
-      const dt = parseFechaDesdeMensaje(msg);
-      if (!dt) {
-        return res.json({
-          reply:
-            "Entendido. Dime **fecha y hora** para la cita (ej: “mañana a las 19”, “el día 16 a las 14”).",
-        });
-      }
-
-      state.pendingDate = dt;
-
-      const proposito = extraerProposito(msg);
-      if (proposito) {
-        state.pendingPurpose = proposito;
-        state.step = "awaitingConfirm";
-        return res.json({
-          reply: `He detectado una cita para **${fmtDateLocal(dt)}**.\nMotivo: **${proposito}**.\n\n¿Confirmas la cita? (Sí/No)`,
-        });
-      }
-
-      state.pendingPurpose = null;
-      state.step = "awaitingPurpose";
-      return res.json({
-        reply: `He detectado una cita para **${fmtDateLocal(dt)}**.\n\n¿Para qué es la cita? (motivo breve)`,
-      });
     }
 
-    // =========================
-    // 4) No es cita: respuesta IA normal
-    // =========================
-    const llmText = await askLLM({ clientId, message: msg, mode });
-    return res.json({ reply: llmText });
+    const dt = parseFechaDesdeMensaje(msg);
+    if (!dt) {
+      return "Entendido. Dime **fecha y hora** para la cita (ej: “mañana a las 19”, “el día 16 a las 14”).";
+    }
+
+    state.pendingDate = dt;
+
+    const proposito = extraerProposito(msg);
+    if (proposito) {
+      state.pendingPurpose = proposito;
+      state.step = "awaitingConfirm";
+      return `He detectado una cita para **${fmtDateLocal(dt)}**.\nMotivo: **${proposito}**.\n\n¿Confirmas la cita? (Sí/No)`;
+    }
+
+    state.pendingPurpose = null;
+    state.step = "awaitingPurpose";
+    return `He detectado una cita para **${fmtDateLocal(dt)}**.\n\n¿Para qué es la cita? (motivo breve)`;
+  }
+
+  // 4) No es cita: respuesta IA normal
+  const llmText = await askLLM({ clientId, message: msg, mode });
+  return llmText;
+}
+
+async function chatHandler(req, res) {
+  try {
+    const { clientId, message, mode = "general" } = req.body || {};
+    if (!clientId || !message) {
+      return res.status(400).json({ error: "clientId y message son requeridos" });
+    }
+
+    const reply = await handleIncomingMessage({ req, clientId, message, mode });
+    return res.json({ reply });
   } catch (err) {
     return res.status(500).json({ error: "Error interno" });
   }
 }
 
-module.exports = { chatHandler };
-
+module.exports = { chatHandler, handleIncomingMessage };
