@@ -7,7 +7,7 @@ const appointmentRoutes = require("./routes/appointmentRoutes");
 const metricsRoutes = require("./routes/metricsRoutes");
 const gaTestRoutes = require("./routes/gaTest");
 
-// (Opcional) si luego lo usas:
+// (Opcional) WhatsApp luego
 // const whatsappRoutes = require("./routes/whatsappRoutes");
 
 const app = express();
@@ -23,15 +23,9 @@ const allowedOrigins = (process.env.CORS_ORIGIN || "*")
 
 const corsOptions = {
   origin: (origin, cb) => {
-    // Permite requests sin origin (Postman, curl, server-to-server)
     if (!origin) return cb(null, true);
-
-    // Si usas "*", dejamos pasar todo
     if (allowedOrigins.includes("*")) return cb(null, true);
-
-    // Si está en la lista, ok
     if (allowedOrigins.includes(origin)) return cb(null, true);
-
     return cb(new Error("CORS blocked: " + origin));
   },
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
@@ -41,8 +35,7 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 
-// ✅ Preflight para TODAS las rutas (IMPORTANTE)
-// En algunos setups nuevos, "*" rompe. Usamos regex /.*/ (no rompe).
+// ✅ Preflight para todas las rutas (NO usar "*")
 app.options(/.*/, cors(corsOptions));
 
 app.use(express.json());
@@ -59,24 +52,25 @@ app.get("/health", (req, res) => {
 });
 
 // ----------------------
-// ✅ Rutas actuales (igual que las tuyas)
+// ✅ Home
 // ----------------------
 app.get("/", (req, res) => {
   res.send("Lumina backend (MyClarix) está corriendo correctamente 🚀");
 });
 
+// ----------------------
+// ✅ Routes
+// ----------------------
 app.use("/api/chat", chatRoutes);
 app.use("/api/appointments", appointmentRoutes);
 app.use("/api/metrics", metricsRoutes);
-
-// ✅ ruta de prueba GA4 (/api/ga-test etc)
 app.use("/api", gaTestRoutes);
 
 // (Opcional) WhatsApp luego
 // app.use("/api/whatsapp", whatsappRoutes);
 
 // ----------------------
-// ✅ Fallback 404 (sin usar "*")
+// ✅ 404 fallback (SIN "*")
 // ----------------------
 app.use((req, res) => {
   res.status(404).json({ error: "Not Found", path: req.originalUrl });

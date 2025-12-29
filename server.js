@@ -6,25 +6,40 @@ const cors = require("cors");
 const { clientContext } = require("./clientContext.js");
 const chatRoutes = require("./routes/chatRoutes.js");
 
+// ✅ WhatsApp webhook (RAW body + verify signature)
+const {
+  router: whatsappRouter,
+  verifyMetaSignature,
+} = require("./routes/whatsappWebhook.js");
+
 const app = express();
 
 // Render / proxies
 app.set("trust proxy", 1);
 
 // ----------------------
-// 🟣 CORS (usa CORS_ORIGIN si existe, si no permite todo)
+// 🟣 CORS
 // ----------------------
 const corsOrigin = process.env.CORS_ORIGIN || "*";
 
 app.use(
   cors({
-    origin: corsOrigin === "*" ? "*" : corsOrigin.split(",").map(s => s.trim()),
+    origin: corsOrigin === "*" ? "*" : corsOrigin.split(",").map((s) => s.trim()),
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "x-client-id", "x-company-id"],
   })
 );
 
+// ✅ 1) PRIMERO: Webhook WhatsApp con express.json({ verify }) SOLO para esta ruta
+app.use(
+  "/api",
+  express.json({ verify: verifyMetaSignature }),
+  whatsappRouter
+);
+
+// ✅ 2) DESPUÉS: JSON normal para el resto de tu API
 app.use(express.json());
+
 app.use(clientContext);
 
 app.use(express.static(path.join(__dirname, "public")));
@@ -47,6 +62,5 @@ app.get("/", (req, res) => {
 const PORT = process.env.PORT || 4000;
 
 app.listen(PORT, () => {
-  console.log(`Servidor Lumina escuchando en el puerto ${PORT}`);
+  console.log(`Servidor MyClarix escuchando en el puerto ${PORT}`);
 });
-
