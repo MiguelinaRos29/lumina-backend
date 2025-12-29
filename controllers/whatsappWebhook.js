@@ -4,10 +4,9 @@ const crypto = require("crypto");
 
 const router = express.Router();
 
-// OJO: para validar firma necesitamos el RAW body.
-// Por eso montaremos este router con express.json({ verify }) en el server.
+// Guardamos raw body para validar firma
 function verifyMetaSignature(req, res, buf) {
-  req.rawBody = buf; // guardamos raw body
+  req.rawBody = buf;
 }
 
 function isValidSignature(req) {
@@ -21,11 +20,15 @@ function isValidSignature(req) {
     .digest("hex");
 
   const received = signature.replace("sha256=", "");
-  // compare timing-safe
-  return crypto.timingSafeEqual(
-    Buffer.from(expected, "hex"),
-    Buffer.from(received, "hex")
-  );
+
+  try {
+    return crypto.timingSafeEqual(
+      Buffer.from(expected, "hex"),
+      Buffer.from(received, "hex")
+    );
+  } catch {
+    return false;
+  }
 }
 
 // 1) Verificación del webhook (GET)
@@ -34,8 +37,8 @@ router.get("/webhook/whatsapp", (req, res) => {
   const token = req.query["hub.verify_token"];
   const challenge = req.query["hub.challenge"];
 
- if (mode === "subscribe" && token === process.env.META_VERIFY_TOKEN) {
-
+  // ✅ usa tu variable actual de Render
+  if (mode === "subscribe" && token === process.env.META_VERIFY_TOKEN) {
     return res.status(200).send(challenge);
   }
   return res.sendStatus(403);
@@ -43,24 +46,16 @@ router.get("/webhook/whatsapp", (req, res) => {
 
 // 2) Recepción de eventos (POST)
 router.post("/webhook/whatsapp", (req, res) => {
-  // Si quieres validar firma (recomendado):
-  if (!isValidSignature(req)) {
-    return res.sendStatus(401);
-  }
+  if (!isValidSignature(req)) return res.sendStatus(401);
 
-  const body = req.body;
-
-  // WhatsApp manda eventos en body.entry[...]
   try {
-    // Aquí luego conectamos con tu chatHandler/flujo MyClarix
-    // Por ahora: log mínimo
-    console.log("WA webhook event:", JSON.stringify(body));
-
+    console.log("WA webhook event:", JSON.stringify(req.body));
     return res.sendStatus(200);
   } catch (e) {
     console.error("WA webhook error:", e);
-    return res.sendStatus(200); // Meta recomienda 200 para no reintentar infinito
+    return res.sendStatus(200);
   }
 });
 
 module.exports = { router, verifyMetaSignature };
+

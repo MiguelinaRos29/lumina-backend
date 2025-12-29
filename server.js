@@ -6,7 +6,7 @@ const cors = require("cors");
 const { clientContext } = require("./clientContext.js");
 const chatRoutes = require("./routes/chatRoutes.js");
 
-// ✅ WhatsApp webhook (RAW body + verify signature)
+// ✅ NUEVO: whatsapp webhook router + verify
 const {
   router: whatsappRouter,
   verifyMetaSignature,
@@ -18,7 +18,7 @@ const app = express();
 app.set("trust proxy", 1);
 
 // ----------------------
-// 🟣 CORS
+// 🟣 CORS (usa CORS_ORIGIN si existe, si no permite todo)
 // ----------------------
 const corsOrigin = process.env.CORS_ORIGIN || "*";
 
@@ -30,15 +30,19 @@ app.use(
   })
 );
 
-// ✅ 1) PRIMERO: Webhook WhatsApp con express.json({ verify }) SOLO para esta ruta
+// ✅ WhatsApp webhook necesita raw body -> middleware SOLO para esas rutas
 app.use(
   "/api",
-  express.json({ verify: verifyMetaSignature }),
-  whatsappRouter
+  express.json({
+    verify: (req, res, buf) => {
+      // guardamos rawBody SOLO en /api/webhook/whatsapp
+      // (si no, no pasa nada)
+      if (req.originalUrl === "/api/webhook/whatsapp") {
+        verifyMetaSignature(req, res, buf);
+      }
+    },
+  })
 );
-
-// ✅ 2) DESPUÉS: JSON normal para el resto de tu API
-app.use(express.json());
 
 app.use(clientContext);
 
@@ -52,7 +56,10 @@ app.get("/api/health", (req, res) => {
   return res.status(200).json({ ok: true, service: "myclarix-api", ts: Date.now() });
 });
 
-// Rutas
+// ✅ WhatsApp webhook (antes o después, da igual, pero dentro de /api)
+app.use("/api", whatsappRouter);
+
+// Chat
 app.use("/api", chatRoutes);
 
 app.get("/", (req, res) => {
@@ -62,5 +69,5 @@ app.get("/", (req, res) => {
 const PORT = process.env.PORT || 4000;
 
 app.listen(PORT, () => {
-  console.log(`Servidor MyClarix escuchando en el puerto ${PORT}`);
+  console.log(`Servidor Lumina escuchando en el puerto ${PORT}`);
 });
