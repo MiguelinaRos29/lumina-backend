@@ -30,14 +30,13 @@ app.use(
   })
 );
 
-// ✅ 1) WhatsApp webhook con RAW body (solo aquí)
-app.use(
-  "/api",
+// ✅ 1) RAW body SOLO para el webhook de WhatsApp
+app.post(
+  "/api/webhook/whatsapp",
   express.json({ verify: verifyMetaSignature })
 );
-app.use("/api", whatsappRouter);
 
-// ✅ 2) Resto del backend con JSON normal
+// ✅ 2) JSON normal para TODO lo demás
 app.use(express.json());
 app.use(clientContext);
 
@@ -51,7 +50,10 @@ app.get("/api/health", (req, res) => {
   return res.status(200).json({ ok: true, service: "myclarix-api", ts: Date.now() });
 });
 
-// Rutas
+// ✅ Webhook router (no vuelve a parsear RAW porque ya lo hicimos arriba en la ruta POST)
+app.use("/api", whatsappRouter);
+
+// ✅ Rutas principales
 app.use("/api", chatRoutes);
 
 app.get("/", (req, res) => {
