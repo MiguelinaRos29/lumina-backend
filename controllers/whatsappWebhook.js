@@ -4,9 +4,10 @@ const crypto = require("crypto");
 
 const router = express.Router();
 
-// Guardamos raw body para validar firma
+// OJO: para validar firma necesitamos el RAW body.
+// Por eso montaremos este router con express.json({ verify }) en el server.
 function verifyMetaSignature(req, res, buf) {
-  req.rawBody = buf;
+  req.rawBody = buf; // guardamos raw body
 }
 
 function isValidSignature(req) {
@@ -20,15 +21,10 @@ function isValidSignature(req) {
     .digest("hex");
 
   const received = signature.replace("sha256=", "");
-
-  try {
-    return crypto.timingSafeEqual(
-      Buffer.from(expected, "hex"),
-      Buffer.from(received, "hex")
-    );
-  } catch {
-    return false;
-  }
+  return crypto.timingSafeEqual(
+    Buffer.from(expected, "hex"),
+    Buffer.from(received, "hex")
+  );
 }
 
 // 1) Verificación del webhook (GET)
@@ -37,7 +33,6 @@ router.get("/webhook/whatsapp", (req, res) => {
   const token = req.query["hub.verify_token"];
   const challenge = req.query["hub.challenge"];
 
-  // ✅ usa tu variable actual de Render
   if (mode === "subscribe" && token === process.env.META_VERIFY_TOKEN) {
     return res.status(200).send(challenge);
   }
@@ -46,7 +41,11 @@ router.get("/webhook/whatsapp", (req, res) => {
 
 // 2) Recepción de eventos (POST)
 router.post("/webhook/whatsapp", (req, res) => {
-  if (!isValidSignature(req)) return res.sendStatus(401);
+  const shouldValidate = process.env.WA_SIGNATURE_VALIDATION !== "0";
+
+  if (shouldValidate && !isValidSignature(req)) {
+    return res.sendStatus(401);
+  }
 
   try {
     console.log("WA webhook event:", JSON.stringify(req.body));
@@ -58,4 +57,3 @@ router.post("/webhook/whatsapp", (req, res) => {
 });
 
 module.exports = { router, verifyMetaSignature };
-
